@@ -1,0 +1,4789 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="format-detection" content="telephone=no">
+<title>轮胎订单工作台</title>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mqtt@5.10.1/dist/mqtt.min.js"></script>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+:root {
+  --primary: #1a73e8;
+  --primary-dark: #0d47a1;
+  --success: #28a745;
+  --warning: #ffc107;
+  --danger: #dc3545;
+  --bg: #f0f2f5;
+  --card-bg: #ffffff;
+  --text: #333;
+  --text-light: #666;
+  --text-muted: #999;
+  --border: #e0e0e0;
+  --radius: 12px;
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+}
+html, body {
+  font-family: -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 15px;
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ===== App Container ===== */
+#app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  height: 100dvh;
+  max-width: 600px;
+  margin: 0 auto;
+  position: relative;
+}
+
+/* ===== Header ===== */
+.app-header {
+  background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+  color: white;
+  padding: calc(var(--safe-top) + 10px) 16px 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+  z-index: 100;
+}
+.app-header h1 { font-size: 18px; font-weight: 600; }
+.app-header .stats-bar { font-size: 12px; opacity: 0.85; }
+.header-right { display: flex; gap: 6px; }
+.icon-btn {
+  width: 36px; height: 36px;
+  border: none; border-radius: 8px;
+  background: rgba(255,255,255,0.15);
+  color: white; font-size: 18px;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.icon-btn:active { background: rgba(255,255,255,0.3); }
+
+/* ===== Pages ===== */
+.page-container {
+  flex: 1;
+  overflow: hidden;
+  position: relative;
+}
+.page {
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  display: none;
+  padding: 12px;
+  padding-bottom: calc(70px + var(--safe-bottom));
+}
+.page.active { display: block; }
+
+/* ===== Textarea ===== */
+.input-box {
+  width: 100%;
+  min-height: 160px;
+  border: 2px dashed var(--border);
+  border-radius: var(--radius);
+  padding: 14px;
+  font-size: 15px;
+  font-family: inherit;
+  resize: none;
+  line-height: 1.8;
+  transition: border-color 0.2s;
+  background: white;
+}
+.input-box:focus {
+  outline: none;
+  border-color: var(--primary);
+  border-style: solid;
+}
+.input-box::placeholder { color: #bbb; font-size: 14px; }
+
+/* ===== Hint ===== */
+.hint-box {
+  background: #e8f0fe;
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 12px;
+  color: var(--text-light);
+  line-height: 1.7;
+  margin-top: 10px;
+}
+.hint-box b { color: var(--primary); }
+
+/* ===== Format Toggle (录入格式一/二) ===== */
+.fmt-toggle { display: flex; gap: 8px; margin-bottom: 10px; }
+.fmt-btn {
+  flex: 1;
+  padding: 9px 8px;
+  border: 1px solid var(--border);
+  background: white;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-light);
+  cursor: pointer;
+  min-height: 42px;
+  transition: all 0.15s;
+  line-height: 1.3;
+}
+.fmt-btn:active { transform: scale(0.98); }
+.fmt-btn.active {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: white;
+  font-weight: 600;
+  box-shadow: 0 2px 6px rgba(26,115,232,0.25);
+}
+
+/* ===== Section Title ===== */
+.section-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+  margin: 14px 0 8px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+/* ===== Preview Card ===== */
+.preview-card {
+  background: white;
+  border-radius: var(--radius);
+  padding: 14px;
+  border: 1px solid var(--border);
+  margin-top: 10px;
+}
+.preview-field {
+  display: flex;
+  align-items: flex-start;
+  margin-bottom: 10px;
+  gap: 8px;
+}
+.preview-label {
+  width: 75px;
+  font-weight: 600;
+  color: var(--text-light);
+  font-size: 13px;
+  flex-shrink: 0;
+  text-align: right;
+  padding-top: 7px;
+}
+.preview-input {
+  flex: 1;
+}
+.preview-input input, .preview-input select {
+  width: 100%;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  padding: 7px 10px;
+  font-size: 14px;
+  font-family: inherit;
+  background: white;
+}
+.preview-input input:focus, .preview-input select:focus {
+  outline: none;
+  border-color: var(--primary);
+}
+.preview-hint, .sheet-hint {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 3px;
+  line-height: 1.4;
+}
+
+/* ===== Buttons ===== */
+.btn {
+  padding: 10px 18px;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  transition: opacity 0.2s;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  white-space: nowrap;
+  min-height: 44px;
+}
+.btn:active { opacity: 0.7; }
+.btn-primary { background: var(--primary); color: white; }
+.btn-success { background: var(--success); color: white; }
+.btn-warning { background: var(--warning); color: #333; }
+.btn-danger { background: var(--danger); color: white; }
+.btn-outline { background: white; color: var(--primary); border: 1px solid var(--primary); }
+.btn-block { width: 100%; }
+.btn-sm { padding: 6px 12px; font-size: 13px; min-height: 36px; }
+.btn-row { display: flex; gap: 8px; margin-top: 12px; }
+.btn-row .btn { flex: 1; }
+
+/* ===== Order Cards (Table replacement) ===== */
+.order-card {
+  background: white;
+  border-radius: var(--radius);
+  padding: 14px;
+  margin-bottom: 10px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  border-left: 4px solid var(--primary);
+  transition: box-shadow 0.2s;
+}
+.order-card.status-拒收 { border-left-color: var(--danger); }
+.order-card.status-已发货 { border-left-color: var(--primary); }
+.order-card.status-未发货 { border-left-color: var(--warning); }
+.order-card.status-签收 { border-left-color: var(--success); }
+.order-card.status-作废 { border-left-color: #999; opacity: 0.6; }
+
+.order-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+.order-card-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text);
+}
+.order-card-no {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+.order-card-body {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  font-size: 15px;
+  line-height: 1.8;
+}
+.order-card-body .field {
+  display: flex;
+  gap: 4px;
+}
+.order-card-body .field-label {
+  color: var(--text-muted);
+  font-weight: 500;
+}
+.order-card-body .field-value {
+  color: var(--text);
+  font-weight: 500;
+}
+.order-card-body .field-value.money { color: var(--success); }
+.order-card-body .field-value.danger { color: var(--danger); }
+
+.order-card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid #f0f0f0;
+}
+.status-badge {
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.badge-签收 { background: #d4edda; color: #155724; }
+.badge-已发货 { background: #d1ecf1; color: #0c5460; }
+.badge-拒收 { background: #f8d7da; color: #721c24; }
+.badge-未发货 { background: #fff3cd; color: #856404; }
+.badge-作废 { background: #e0e0e0; color: #666; text-decoration: line-through; }
+
+.card-actions { display: flex; gap: 6px; }
+.card-action-btn {
+  width: 32px; height: 32px;
+  border: none; border-radius: 6px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 15px;
+  cursor: pointer;
+}
+.card-action-btn.edit { background: #e8f0fe; color: var(--primary); }
+.card-action-btn.delete { background: #ffeaea; color: var(--danger); }
+
+/* ===== Search ===== */
+.search-bar {
+  position: sticky;
+  top: 0;
+  background: var(--bg);
+  padding: 0 0 10px;
+  z-index: 5;
+}
+.search-bar input {
+  width: 100%;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  font-size: 14px;
+  background: white;
+}
+.search-bar input:focus { outline: none; border-color: var(--primary); }
+.search-input-wrap { position: relative; display: flex; align-items: center; }
+.search-clear {
+  position: absolute;
+  right: 8px;
+  width: 24px; height: 24px;
+  border: none; border-radius: 50%;
+  background: #e0e0e0; color: #555;
+  font-size: 13px; line-height: 1;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; padding: 0;
+}
+.search-clear:active { background: #d0d0d0; }
+
+/* ===== Sort Bar ===== */
+.sort-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.sort-label {
+  font-size: 12px;
+  color: var(--text-muted, #888);
+  flex: 0 0 auto;
+  font-weight: 600;
+}
+.sort-options {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: 2px;
+}
+.sort-options::-webkit-scrollbar { height: 0; display: none; }
+.sort-btn {
+  flex: 0 0 auto;
+  border: 1px solid var(--border, #ddd);
+  background: white;
+  color: #555;
+  border-radius: 16px;
+  padding: 5px 14px;
+  font-size: 13px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s;
+}
+.sort-btn:active { transform: scale(0.96); }
+.sort-btn.active {
+  background: var(--primary, #4a6cf7);
+  border-color: var(--primary, #4a6cf7);
+  color: white;
+  font-weight: 600;
+}
+.sort-caret { font-size: 10px; margin-left: 2px; }
+
+/* ===== Status Filter Popover ===== */
+.status-filter-pop {
+  background: white;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px;
+  margin-bottom: 10px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+}
+.status-filter-title {
+  font-size: 13px;
+  color: var(--text-light);
+  margin-bottom: 10px;
+  font-weight: 600;
+}
+.status-filter-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.status-chip {
+  border: 1px solid var(--border);
+  background: #f8f9fa;
+  border-radius: 16px;
+  padding: 6px 14px;
+  font-size: 13px;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  white-space: nowrap;
+  transition: all 0.15s;
+}
+.status-chip:active { transform: scale(0.96); }
+.status-chip.on {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: white;
+  font-weight: 600;
+}
+.status-filter-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+.status-filter-actions .btn { flex: 1; }
+
+/* ===== Toolbar ===== */
+.list-toolbar {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+.list-toolbar .btn { flex: 1; min-height: 38px; font-size: 13px; padding: 6px 10px; }
+.export-group { display: flex; align-items: center; gap: 4px; flex: 2; min-height: 38px; }
+.export-date { flex: 1; min-width: 0; padding: 6px 4px; font-size: 12px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--text); text-align: center; }
+.export-date-sep { font-size: 12px; color: var(--text-muted); }
+.export-group .btn { flex: 0 0 auto; min-height: 38px; }
+
+/* ===== Match Card ===== */
+.match-card {
+  background: white;
+  border-radius: var(--radius);
+  padding: 14px;
+  border: 1px solid var(--border);
+  margin-bottom: 10px;
+}
+.match-tracking {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--primary);
+  margin-bottom: 8px;
+  word-break: break-all;
+}
+.match-confidence {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 600;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+.match-high { background: #d4edda; color: #155724; }
+.match-medium { background: #fff3cd; color: #856404; }
+.match-low { background: #f8d7da; color: #721c24; }
+.match-order-info {
+  font-size: 13px;
+  color: var(--text);
+  line-height: 1.8;
+}
+.match-order-info .label { color: var(--text-muted); font-weight: 600; }
+.match-actions {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.match-select {
+  padding: 8px 10px;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  font-size: 14px;
+  width: 100%;
+  min-height: 40px;
+}
+
+/* ===== Statistics ===== */
+.stats-cards {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.stat-card {
+  background: white;
+  border-radius: var(--radius);
+  padding: 16px;
+  text-align: center;
+  border: 1px solid var(--border);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+}
+.stat-card .stat-label {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+.stat-card .stat-count {
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--primary);
+}
+.stat-card .stat-amount {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--success);
+  margin-top: 4px;
+}
+.stat-card .stat-unit {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--text-muted);
+}
+
+.stats-section-title {
+  font-size: 15px;
+  font-weight: 600;
+  margin: 16px 0 10px;
+  padding-bottom: 6px;
+  border-bottom: 2px solid var(--border);
+}
+.custom-range {
+  background: white;
+  border-radius: var(--radius);
+  padding: 14px;
+  border: 1px solid var(--border);
+}
+.custom-range-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  font-size: 13px;
+}
+.custom-range-row label { color: var(--text-light); flex-shrink: 0; }
+.custom-range-row input[type="date"] {
+  flex: 1;
+  padding: 8px 10px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  font-size: 14px;
+  min-height: 40px;
+}
+.custom-range-row input:focus { outline: none; border-color: var(--primary); }
+.custom-result {
+  background: #f8f9fa;
+  border-radius: 8px;
+  padding: 14px;
+  text-align: center;
+  margin-top: 10px;
+  border: 1px solid var(--border);
+}
+.custom-result .num { font-size: 24px; font-weight: 700; color: var(--primary); }
+.custom-result .amt { font-size: 18px; font-weight: 600; color: var(--success); margin-top: 4px; }
+
+.status-breakdown {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.status-tag {
+  padding: 10px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+.status-tag .count { font-size: 20px; }
+.status-tag .amt { font-size: 12px; opacity: 0.85; }
+.tag-签收 { background: #d4edda; color: #155724; }
+.tag-已发货 { background: #d1ecf1; color: #0c5460; }
+.tag-拒收 { background: #f8d7da; color: #721c24; }
+.tag-未发货 { background: #fff3cd; color: #856404; }
+.tag-作废 { background: #e0e0e0; color: #666; }
+
+.total-amount-box {
+  margin-top: 16px;
+  text-align: center;
+  padding: 16px;
+  background: linear-gradient(135deg, #e8f0fe, #f0e8ff);
+  border-radius: var(--radius);
+}
+.total-amount-box .label { font-size: 13px; color: var(--text-light); }
+.total-amount-box .amount { font-size: 26px; font-weight: 700; color: var(--primary); }
+
+/* ===== Bottom Nav ===== */
+.bottom-nav {
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  display: flex;
+  background: white;
+  border-top: 1px solid var(--border);
+  padding-bottom: var(--safe-bottom);
+  z-index: 100;
+  flex-shrink: 0;
+}
+.nav-item {
+  flex: 1;
+  padding: 8px 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  font-size: 11px;
+  color: var(--text-muted);
+  transition: color 0.2s;
+  min-height: 56px;
+  justify-content: center;
+}
+.nav-item.active { color: var(--primary); }
+.nav-item:active { background: #f0f2f5; }
+.nav-icon { font-size: 22px; line-height: 1; }
+.nav-badge {
+  position: absolute;
+  top: 4px;
+  right: 50%;
+  margin-right: -20px;
+  background: var(--danger);
+  color: white;
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 10px;
+  min-width: 16px;
+  text-align: center;
+}
+
+/* ===== Bottom Sheet (Edit Order) ===== */
+.bottom-sheet-overlay {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.4);
+  z-index: 500;
+  display: none;
+  align-items: flex-end;
+  justify-content: center;
+}
+.bottom-sheet-overlay.show { display: flex; }
+.bottom-sheet {
+  background: white;
+  border-radius: 20px 20px 0 0;
+  width: 100%;
+  max-width: 600px;
+  max-height: 85vh;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 20px;
+  padding-bottom: calc(30px + var(--safe-bottom));
+  animation: slideUp 0.3s ease;
+}
+@keyframes slideUp {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+.sheet-handle {
+  width: 40px; height: 4px;
+  background: #ddd; border-radius: 2px;
+  margin: 0 auto 16px;
+}
+.sheet-title {
+  font-size: 18px;
+  font-weight: 700;
+  margin-bottom: 16px;
+  text-align: center;
+}
+.sheet-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.sheet-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.sheet-field label {
+  width: 75px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-light);
+  flex-shrink: 0;
+  text-align: right;
+}
+.sheet-field input, .sheet-field select {
+  flex: 1;
+  padding: 10px 12px;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  font-size: 15px;
+  font-family: inherit;
+  min-height: 44px;
+}
+.sheet-field input:focus, .sheet-field select:focus {
+  outline: none;
+  border-color: var(--primary);
+}
+.sheet-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 16px;
+}
+.sheet-actions .btn { flex: 1; }
+
+/* ===== Panel Close Button (top-right corner of all secondary menus) ===== */
+.panel-close-x {
+  position: sticky;
+  top: 0;
+  float: right;
+  width: 34px;
+  height: 34px;
+  margin: -6px -6px 6px 10px;
+  border: none;
+  background: rgba(0,0,0,0.05);
+  border-radius: 50%;
+  font-size: 18px;
+  line-height: 1;
+  color: #666;
+  cursor: pointer;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  -webkit-appearance: none;
+  appearance: none;
+  flex-shrink: 0;
+}
+.panel-close-x:active { background: rgba(0,0,0,0.14); }
+
+/* ===== Action Menu ===== */
+.action-menu-overlay {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.4);
+  z-index: 500;
+  display: none;
+  align-items: flex-end;
+  justify-content: center;
+}
+.action-menu-overlay.show { display: flex; }
+.action-menu {
+  background: white;
+  border-radius: 16px 16px 0 0;
+  width: 100%;
+  max-width: 600px;
+  padding: 16px;
+  padding-bottom: calc(20px + var(--safe-bottom));
+  animation: slideUp 0.3s ease;
+}
+.action-menu-title {
+  font-size: 16px;
+  font-weight: 600;
+  text-align: center;
+  margin-bottom: 14px;
+  color: var(--text-light);
+}
+.action-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px;
+  border: none;
+  background: #f8f9fa;
+  border-radius: 10px;
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--text);
+  cursor: pointer;
+  width: 100%;
+  margin-bottom: 8px;
+  min-height: 50px;
+}
+.action-menu-item:active { background: #e8f0fe; }
+.action-menu-item .icon { font-size: 20px; }
+.action-menu-item.danger { color: var(--danger); }
+
+/* ===== Toast ===== */
+.toast {
+  position: fixed;
+  bottom: 90px;
+  left: 50%;
+  transform: translateX(-50%) translateY(20px);
+  background: rgba(0,0,0,0.8);
+  color: white;
+  padding: 10px 24px;
+  border-radius: 20px;
+  font-size: 14px;
+  z-index: 2000;
+  opacity: 0;
+  transition: all 0.3s;
+  white-space: nowrap;
+  max-width: 90vw;
+}
+.toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+.toast.success { background: var(--success); }
+.toast.error { background: var(--danger); }
+
+/* ===== Confirm Modal ===== */
+.confirm-overlay {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.5);
+  z-index: 9999;
+  display: none;
+  align-items: center;
+  justify-content: center;
+}
+.confirm-overlay.show { display: flex; }
+.confirm-modal {
+  background: white;
+  border-radius: 16px;
+  padding: 24px 20px 16px;
+  width: 80%;
+  max-width: 320px;
+  text-align: center;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+}
+.confirm-text {
+  font-size: 16px;
+  color: var(--text);
+  margin-bottom: 20px;
+  line-height: 1.5;
+}
+.confirm-actions {
+  display: flex;
+  gap: 12px;
+}
+.confirm-btn {
+  flex: 1;
+  padding: 12px;
+  border: none;
+  border-radius: 10px;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.confirm-btn.cancel {
+  background: #f0f0f0;
+  color: var(--text-light);
+}
+.confirm-btn.ok {
+  background: var(--danger);
+  color: white;
+}
+.confirm-btn:active { transform: scale(0.96); }
+
+/* ===== Loading ===== */
+.loading-overlay {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(255,255,255,0.7);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 3000;
+}
+.loading-overlay.show { display: flex; }
+.spinner {
+  width: 40px;
+  height: 40px;
+  border: 4px solid #e0e0e0;
+  border-top-color: var(--primary);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ===== Empty State ===== */
+.empty-state {
+  text-align: center;
+  padding: 50px 20px;
+  color: var(--text-muted);
+}
+.empty-state .icon { font-size: 50px; margin-bottom: 12px; }
+.empty-state p { font-size: 14px; line-height: 1.8; }
+
+/* ===== Collapsible card body ===== */
+.order-card.collapsed .order-card-body { display: none; }
+.order-card.collapsed .order-card-footer { display: flex; }
+.expand-icon { font-size: 12px; color: var(--text-muted); transition: transform 0.2s; }
+.order-card.collapsed .expand-icon { transform: rotate(-90deg); }
+.header-actions { display: flex; align-items: center; gap: 8px; }
+.header-del-btn {
+  width: 28px; height: 28px;
+  border: none; border-radius: 6px;
+  background: #ffeaea; color: var(--danger);
+  font-size: 14px;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer;
+}
+.header-del-btn:active { background: #ffcaca; transform: scale(0.92); }
+
+/* ===== Sync Status ===== */
+.sync-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: rgba(255,255,255,0.15);
+  white-space: nowrap;
+}
+.sync-indicator.synced { background: rgba(40,167,69,0.2); }
+.sync-indicator.syncing { background: rgba(255,193,7,0.2); animation: pulse 1s infinite; }
+.sync-indicator.offline { background: rgba(220,53,69,0.2); }
+@keyframes pulse { 0%,100%{opacity:1;} 50%{opacity:0.5;} }
+
+.sync-dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  display: inline-block;
+}
+.sync-dot.synced { background: #4caf50; }
+.sync-dot.syncing { background: #ffc107; }
+.sync-dot.offline { background: #f44336; }
+
+/* ===== Sync Panel ===== */
+.sync-panel {
+  position: fixed;
+  bottom: 0; left: 0; right: 0;
+  max-width: 600px;
+  margin: 0 auto;
+  background: white;
+  border-radius: 16px 16px 0 0;
+  box-shadow: 0 -4px 20px rgba(0,0,0,0.15);
+  z-index: 1000;
+  padding: 20px;
+  padding-bottom: calc(40px + var(--safe-bottom));
+  max-height: 70vh;
+  overflow-y: auto;
+  display: none;
+}
+.sync-panel.show { display: block; }
+.sync-panel h3 { font-size: 18px; margin-bottom: 16px; }
+.sync-info-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border);
+}
+.sync-info-row .label { color: var(--text-light); font-size: 14px; }
+.sync-info-row .value { font-size: 14px; font-weight: 500; }
+.sync-server-input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 14px;
+  margin: 8px 0;
+}
+.sync-btn {
+  width: 100%;
+  padding: 12px;
+  border: none;
+  border-radius: 10px;
+  background: var(--primary);
+  color: white;
+  font-size: 15px;
+  font-weight: 500;
+  cursor: pointer;
+  margin-top: 8px;
+}
+.sync-btn:active { background: var(--primary-dark); }
+.sync-btn.secondary { background: #e0e0e0; color: var(--text); }
+.sync-hint { font-size: 12px; color: var(--text-muted); margin-top: 12px; line-height: 1.6; }
+.sync-qr-area {
+  text-align: center;
+  padding: 12px;
+  background: var(--bg);
+  border-radius: 10px;
+  margin-top: 12px;
+}
+.sync-qr-area canvas { max-width: 200px; }
+
+/* ===== Column Management Panel ===== */
+.col-panel {
+  position: fixed;
+  bottom: 0; left: 0; right: 0;
+  max-width: 600px;
+  margin: 0 auto;
+  background: white;
+  border-radius: 16px 16px 0 0;
+  box-shadow: 0 -4px 20px rgba(0,0,0,0.15);
+  z-index: 1000;
+  padding: 20px;
+  padding-bottom: calc(40px + var(--safe-bottom));
+  max-height: 80vh;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  display: none;
+}
+.col-panel.show { display: block; }
+.col-panel h3 { font-size: 18px; margin-bottom: 16px; }
+.col-list { display: flex; flex-direction: column; gap: 8px; }
+.col-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  background: #f8f9fa;
+  border-radius: 10px;
+  font-size: 15px;
+}
+.col-item .col-name { font-weight: 500; }
+.col-item .col-type { font-size: 11px; color: var(--text-muted); margin-left: 6px; }
+.col-item .col-actions { display: flex; gap: 6px; }
+.col-del-btn, .col-restore-btn {
+  border: none;
+  border-radius: 6px;
+  padding: 6px 12px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  min-height: 36px;
+}
+.col-del-btn { background: #ffeaea; color: var(--danger); }
+.col-del-btn:active { background: #f8d7da; }
+.col-restore-btn { background: #d4edda; color: #155724; }
+.col-restore-btn:active { background: #c3e6cb; }
+
+/* Drag handle for column reorder */
+.col-drag-handle {
+  width: 32px; height: 32px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 18px; color: var(--text-muted);
+  cursor: grab; flex-shrink: 0;
+  touch-action: none;
+  user-select: none; -webkit-user-select: none;
+}
+.col-drag-handle:active { cursor: grabbing; }
+.col-item.dragging { opacity: 0.4; background: #e8f0fe; }
+.col-item.drag-over-top { border-top: 3px solid var(--primary); padding-top: 9px; }
+.col-item.drag-over-bottom { border-bottom: 3px solid var(--primary); padding-bottom: 9px; }
+.col-drag-hint { font-size: 12px; color: var(--text-muted); margin-bottom: 8px; }
+.col-deleted-section {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 2px dashed var(--border);
+}
+.col-deleted-title {
+  font-size: 14px;
+  color: var(--text-muted);
+  margin-bottom: 10px;
+}
+.col-add-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 16px;
+}
+.col-add-row input {
+  flex: 1;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 15px;
+  min-height: 44px;
+}
+.col-add-row input:focus { outline: none; border-color: var(--primary); }
+
+/* ===== 成本模块（替换原物流模块） ===== */
+.cost-list-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 10px 0;
+}
+.cost-search {
+  flex: 1;
+  max-width: 180px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 14px;
+  min-height: 40px;
+}
+.cost-search:focus { outline: none; border-color: var(--primary); }
+.cost-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--card-bg);
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+}
+.cost-table th, .cost-table td {
+  padding: 12px 10px;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+  font-size: 14px;
+}
+.cost-table th {
+  background: #f5f6f8;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+.cost-table td.money { color: var(--danger); font-weight: 600; }
+.cost-table tr:last-child td { border-bottom: none; }
+.cost-table td.cost-model { font-weight: 500; }
+.btn.danger { color: var(--danger); border-color: var(--danger); }
+
+/* 成本品牌导航 */
+.cost-brand-nav { display: flex; flex-wrap: wrap; gap: 8px; padding: 6px 0 8px; -webkit-overflow-scrolling: touch; }
+.brand-chip { flex: 0 0 auto; position: relative; padding: 8px 14px; border: 1px solid var(--border); border-radius: 20px; background: var(--card-bg); color: var(--text); font-size: 14px; cursor: pointer; white-space: nowrap; transition: all .15s; }
+.brand-chip.active { background: var(--primary); color: #fff; border-color: var(--primary); font-weight: 600; }
+.brand-count { display: inline-block; margin-left: 6px; font-size: 12px; opacity: .7; }
+.brand-add { border-style: dashed; color: var(--primary); }
+.brand-del { position: absolute; top: -7px; right: -7px; width: 18px; height: 18px; line-height: 16px; text-align: center; font-size: 11px; border-radius: 50%; background: var(--danger); color: #fff; }
+.cost-brand-context { font-size: 13px; color: var(--text-muted); margin: 2px 0 4px; }
+.cost-brand-context b { color: var(--primary); }
+/* 品牌分组 */
+.cost-group-row { display: flex; align-items: center; gap: 8px; margin: 16px 0 6px; }
+.cost-group-title { font-size: 15px; font-weight: 700; color: var(--text); }
+.cost-group-count { font-size: 12px; color: var(--text-muted); }
+/* 内联编辑 */
+.cost-edit-input { width: 100%; padding: 6px 8px; border: 1px solid var(--primary); border-radius: 6px; font-size: 14px; box-sizing: border-box; }
+</style>
+</head>
+<body>
+
+<div id="app">
+  <!-- Header -->
+  <div class="app-header">
+    <div>
+      <h1 id="appTitle">🛞 轮胎订单工作台</h1>
+      <span class="stats-bar" id="statsBar">共 0 条订单</span>
+      <span class="sync-indicator" id="syncStatus" onclick="showSyncPanel()" style="margin-left:6px;">
+        <span class="sync-dot" id="syncDot"></span>
+        <span id="syncText">连接中</span>
+      </span>
+    </div>
+    <div class="header-right">
+      <button class="icon-btn" onclick="showSyncPanel()" title="同步">☁️</button>
+      <button class="icon-btn" onclick="showActionMenu()" title="更多">☰</button>
+    </div>
+  </div>
+
+  <!-- Pages -->
+  <div class="page-container">
+    <!-- Page 1: Order Input -->
+    <div class="page active" id="page-input">
+      <div class="section-title">
+        <span>📝 订单录入</span>
+        <button class="btn btn-sm btn-outline" onclick="clearInput()">清空</button>
+      </div>
+      <div class="fmt-toggle">
+        <button class="fmt-btn active" id="fmtF1Btn" onclick="setInputFormat('f1')">格式一（含定金/全款/单价）</button>
+        <button class="fmt-btn" id="fmtF2Btn" onclick="setInputFormat('f2')">格式二（去掉定金/全款）</button>
+      </div>
+      <textarea class="input-box" id="orderInput" placeholder="先选择上方录入格式，再粘贴，自动解析：&#10;&#10;【格式一】含定金/全款/单价（单价按型号自动取成本，可手动改）：&#10;日期：8/1&#10;型号：米其林235 50 17&#10;数量：两个代收740元&#10;定金：200&#10;全款：740&#10;备注：26年 皓悦4&#10;地址：姜松18285294086贵州省遵义市...&#10;&#10;【格式二】不含定金/全款：&#10;日期：8月10号&#10;收货信息：青岛市城阳区...&#10;李 15092035245倍耐力275/35/20pz4&#10;数量：2&#10;物流代收金额：1080&#10;花纹：皓悦4（自动写入备注）&#10;&#10;粘贴后自动解析（成本单价/成本总货款由「价格」模块按型号自动派生）"></textarea>
+      <div class="hint-box">
+        💡 <b>格式一</b>：含「定金/全款/单价」，单价按型号自动取成本（可手动修改）<br>
+        💡 <b>格式二</b>：去掉定金/全款，仅录入代收/到店安装等<br>
+        💡 支持<b>代收</b>、<b>全款</b>、<b>到店安装</b>、<b>物流代收</b>等格式<br>
+        💡 型号：米其林 245/35/20（品牌+规格已合并为一列）<br>
+        💡 <b>花纹</b>识别后自动写入「备注」栏，不再单独成列<br>
+        💡 单价 / 金额 不再手动录入，到「价格」页按型号导入后自动匹配<br>
+        💡 解析后可在下方修改，确认后点「加入表格」
+      </div>
+      <div id="previewSection" style="display:none;">
+        <div class="section-title">👁️ 解析预览</div>
+        <div id="previewContent"></div>
+      </div>
+    </div>
+
+    <!-- Page 2: Cost (成本) Input -->
+    <div class="page" id="page-cost">
+      <div class="section-title">
+        <span>💰 价格录入</span>
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-sm btn-primary" onclick="importCostExcel()">📥 导入Excel</button>
+          <button class="btn btn-sm btn-outline" onclick="addCostRowManual()">➕ 手动添加</button>
+          <button class="btn btn-sm btn-outline" onclick="clearCostTable()">清空</button>
+        </div>
+      </div>
+      <div class="hint-box">
+        💡 顶部按<b>品牌</b>切换：点品牌可单独导入/管理该品牌的成本表（型号 + 单价）<br>
+        💡 导入含 <b>型号</b> 与 <b>单价</b> 两列的 Excel，系统自动按型号建立单价表<br>
+        💡 订单卡片将自动显示 <b>单价</b> 与 <b>金额(元)</b>（单价 × 数量）
+      </div>
+      <div class="cost-brand-nav" id="costBrandNav"></div>
+      <div class="cost-brand-context" id="costBrandContext"></div>
+      <div class="cost-list-toolbar">
+        <span id="costCount" style="color:var(--text-muted);font-size:13px;">共 0 条</span>
+        <input type="text" id="costSearch" class="cost-search" placeholder="🔍 搜索型号" oninput="renderCostTable()">
+      </div>
+      <div id="costTableContainer"></div>
+    </div>
+
+    <!-- Page 3: Order List -->
+    <div class="page" id="page-list">
+      <div class="search-bar">
+        <div class="search-input-wrap">
+          <input type="text" id="searchInput" placeholder="🔍 搜索型号/收件人/联系方式/地址..." oninput="renderOrderList()">
+          <button class="search-clear" id="searchClearBtn" type="button" style="display:none;" onclick="clearSearch()">✕</button>
+        </div>
+      </div>
+      <div class="sort-bar" id="sortBar">
+        <span class="sort-label">排序</span>
+        <div class="sort-options">
+          <button class="sort-btn" data-field="time" onclick="setSortField('time')">时间 <span class="sort-caret">▼</span></button>
+          <button class="sort-btn" data-field="amount" onclick="setSortField('amount')">金额</button>
+          <button class="sort-btn" data-field="date" onclick="setSortField('date')">日期</button>
+          <button class="sort-btn" data-field="status" id="statusFilterBtn" onclick="toggleStatusFilter()">状态 <span class="sort-caret" id="statusFilterCaret"></span></button>
+        </div>
+      </div>
+      <div class="status-filter-pop" id="statusFilterPop" style="display:none;">
+        <div class="status-filter-title">按状态筛选（可多选，不选则显示全部）</div>
+        <div class="status-filter-chips" id="statusFilterChips"></div>
+        <div class="status-filter-actions">
+          <button class="btn btn-outline btn-sm" onclick="clearStatusFilter()">全部</button>
+          <button class="btn btn-primary btn-sm" onclick="closeStatusFilter()">完成</button>
+        </div>
+      </div>
+      <div class="list-toolbar">
+        <button class="btn btn-warning btn-sm" onclick="showColPanel()">📋 列管理</button>
+        <button class="btn btn-outline btn-sm" onclick="addEmptyRow()">✏️ 手动添加</button>
+        <div class="export-group">
+          <input type="date" id="exportDateFrom" class="export-date" title="起始日期">
+          <span class="export-date-sep">~</span>
+          <input type="date" id="exportDateTo" class="export-date" title="截止日期">
+          <button class="btn btn-primary btn-sm" onclick="exportExcel()">📤 导出</button>
+        </div>
+      </div>
+      <div id="orderListContainer">
+        <div class="empty-state">
+          <div class="icon">📋</div>
+          <p>暂无订单数据<br>从「录入」页面粘贴订单信息开始</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Page 4: Statistics -->
+    <div class="page" id="page-stats">
+      <div class="section-title">📊 订单统计</div>
+      <div class="stats-cards">
+        <div class="stat-card">
+          <div class="stat-label" id="todayLabel">今日订单</div>
+          <div class="stat-count" id="todayCount">0<span class="stat-unit"> 条</span></div>
+          <div class="stat-amount" id="todayAmount">¥0</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label" id="monthLabel">本月订单</div>
+          <div class="stat-count" id="monthCount">0<span class="stat-unit"> 条</span></div>
+          <div class="stat-amount" id="monthAmount">¥0</div>
+        </div>
+      </div>
+
+      <div class="stats-section-title">📅 自定义时间段</div>
+      <div class="custom-range">
+        <div class="custom-range-row">
+          <label>开始</label>
+          <input type="date" id="statStartDate" oninput="onStatDateChange()">
+        </div>
+        <div class="custom-range-row">
+          <label>结束</label>
+          <input type="date" id="statEndDate" oninput="onStatDateChange()">
+        </div>
+        <button class="btn btn-primary btn-block btn-sm" onclick="queryCustomRange()">查询</button>
+        <div class="custom-result" id="customResult">
+          <div style="color:var(--text-muted);">选择日期范围后点击查询</div>
+        </div>
+      </div>
+
+      <div class="stats-section-title" id="statusBreakdownTitle">📊 状态统计</div>
+      <div class="status-breakdown" id="statusBreakdown"></div>
+
+      <div class="total-amount-box">
+        <div class="label">全部订单总金额</div>
+        <div class="amount" id="totalAmount">¥0</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Bottom Nav -->
+  <div class="bottom-nav">
+    <button class="nav-item active" onclick="switchPage('input')">
+      <span class="nav-icon">📝</span>
+      <span>录入</span>
+    </button>
+    <button class="nav-item" onclick="switchPage('cost')">
+      <span class="nav-icon">💰</span>
+      <span>价格</span>
+    </button>
+    <button class="nav-item" onclick="switchPage('list')">
+      <span class="nav-icon">📋</span>
+      <span>订单</span>
+    </button>
+    <button class="nav-item" onclick="switchPage('stats')">
+      <span class="nav-icon">📊</span>
+      <span>统计</span>
+    </button>
+  </div>
+</div>
+
+<!-- Bottom Sheet: Edit Order -->
+<div class="bottom-sheet-overlay" id="editSheetOverlay" onclick="if(event.target===this) closeEditSheet()">
+  <div class="bottom-sheet">
+    <button class="panel-close-x" onclick="closeEditSheet()" aria-label="关闭">✕</button>
+    <div class="sheet-handle"></div>
+    <div class="sheet-title" id="editSheetTitle">编辑订单</div>
+    <div class="sheet-fields" id="editFields"></div>
+    <div class="sheet-actions">
+      <button class="btn btn-danger" onclick="closeEditSheet()">取消</button>
+      <button class="btn btn-success" onclick="saveEditOrder()">💾 保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- Action Menu -->
+<div class="action-menu-overlay" id="actionMenuOverlay" onclick="if(event.target===this) hideActionMenu()">
+  <div class="action-menu">
+    <button class="panel-close-x" onclick="hideActionMenu()" aria-label="关闭">✕</button>
+    <div class="action-menu-title">操作菜单</div>
+    <button class="action-menu-item" onclick="hideActionMenu(); importExcel()">
+      <span class="icon">📥</span> 导入Excel
+    </button>
+    <button class="action-menu-item" onclick="hideActionMenu(); exportExcel()">
+      <span class="icon">📤</span> 导出Excel
+    </button>
+    <button class="action-menu-item" onclick="hideActionMenu(); addCustomColumn()">
+      <span class="icon">➕</span> 添加自定义列
+    </button>
+    <button class="action-menu-item" onclick="hideActionMenu(); showColPanel()">
+      <span class="icon">📋</span> 列管理（增删列）
+    </button>
+    <button class="action-menu-item" onclick="hideActionMenu(); addEmptyRow(); switchPage('list')">
+      <span class="icon">✏️</span> 手动添加订单
+    </button>
+    <button class="action-menu-item" onclick="hideActionMenu(); showSyncPanel()">
+      <span class="icon">☁️</span> 云端同步设置
+    </button>
+    <button class="action-menu-item danger" onclick="hideActionMenu(); clearAll()">
+      <span class="icon">🗑️</span> 清空全部数据
+    </button>
+    <button class="action-menu-item" onclick="hideActionMenu()">
+      <span class="icon">✕</span> 关闭
+    </button>
+  </div>
+</div>
+
+<!-- Sync Panel -->
+<div class="sync-panel" id="syncPanel">
+  <button class="panel-close-x" onclick="hideSyncPanel()" aria-label="关闭">✕</button>
+  <h3>☁️ 云端同步</h3>
+  <div class="sync-info-row">
+    <span class="label">同步状态</span>
+    <span class="value" id="syncPanelStatus">检测中...</span>
+  </div>
+  <div class="sync-info-row">
+    <span class="label">订单数量</span>
+    <span class="value" id="syncPanelCount">0 条</span>
+  </div>
+  <div class="sync-info-row">
+    <span class="label">最后同步</span>
+    <span class="value" id="syncPanelTime">-</span>
+  </div>
+  <div class="sync-info-row">
+    <span class="label">服务器地址</span>
+    <span class="value" id="syncPanelServer" style="font-size:12px;word-break:break-all;">-</span>
+  </div>
+  <div style="margin-top:16px;">
+    <label style="font-size:13px;color:var(--text-light);">自定义服务器地址（留空则自动检测）</label>
+    <input class="sync-server-input" id="syncServerInput" placeholder="例如: http://192.168.1.100:8080" />
+    <button class="sync-btn" onclick="saveSyncServer()">保存并连接</button>
+    <button class="sync-btn secondary" onclick="manualSync()">立即同步</button>
+  </div>
+  <div style="margin-top:16px;border-top:1px solid var(--border);padding-top:16px;">
+    <div style="font-size:15px;font-weight:600;margin-bottom:8px;">☁️ 云端同步（公网）</div>
+    <div class="sync-info-row">
+      <span class="label">云端状态</span>
+      <span class="value" id="cloudSyncStatus">连接中...</span>
+    </div>
+    <div class="sync-info-row">
+      <span class="label">同步房间</span>
+      <span class="value" id="cloudRoomCodeDisplay" style="font-weight:600;letter-spacing:1px;">-</span>
+    </div>
+    <div style="margin-top:8px;">
+      <label style="font-size:13px;color:var(--text-light);">房间显示名（所有设备同步，留空恢复默认）</label>
+      <input class="sync-server-input" id="roomNameInput" placeholder="例如：潮州订单工作台" maxlength="20" />
+      <button class="sync-btn" onclick="saveRoomDisplayName()">保存名称</button>
+    </div>
+    <div style="margin-top:8px;">
+      <label style="font-size:13px;color:var(--text-light);">更换房间码（所有设备需一致）</label>
+      <input class="sync-server-input" id="cloudRoomInput" placeholder="输入6位房间码" maxlength="6" style="text-transform:uppercase;" />
+      <button class="sync-btn" onclick="changeCloudRoom()">加入房间</button>
+      <button class="sync-btn secondary" onclick="copyShareUrl()">复制分享链接</button>
+      <button class="sync-btn" onclick="forceSyncNow()" style="background:#28a745;">⚡ 立即同步</button>
+      <button class="sync-btn secondary" onclick="resetCloudRoom()" style="font-size:12px;">🔄 重置房间</button>
+    </div>
+    <div style="font-size:12px;color:var(--text-muted);margin-top:8px;line-height:1.6;">
+      💡 打开分享链接的设备自动加入同一房间，数据实时同步<br>
+      💡 无需同一WiFi，手机流量也能同步
+    </div>
+  </div>
+  <div class="sync-qr-area" id="qrArea">
+    <div style="font-size:13px;color:var(--text-light);margin-bottom:8px;">手机扫码访问</div>
+    <canvas id="qrCanvas"></canvas>
+    <div style="font-size:11px;color:var(--text-muted);margin-top:6px;word-break:break-all;" id="qrUrl"></div>
+  </div>
+  <div class="sync-hint">
+    💡 <b>云端同步（推荐）：</b><br>
+    1. 点击「复制分享链接」获取公网访问地址<br>
+    2. 在其他设备打开该链接，自动加入同一房间<br>
+    3. 任意设备操作，数据实时同步到所有设备<br>
+    4. 无需同一WiFi，手机流量也能同步<br><br>
+    ⚠️ 数据同时保存在云端和本地浏览器，断网时仍可使用<br>
+    ⚠️ 换电脑或清理浏览器缓存前，请先导出Excel备份
+  </div>
+  <div style="margin-top:12px;padding:12px;background:#fff3cd;border-radius:8px;border:1px solid #ffeaa7;">
+    <div style="font-size:13px;font-weight:600;color:#856404;margin-bottom:8px;">🛡️ 数据安全</div>
+    <div style="font-size:12px;color:#856404;line-height:1.6;margin-bottom:8px;">
+      每次云端同步前自动备份本地数据<br>
+      如遇数据丢失，可点击下方按钮恢复
+    </div>
+    <button class="sync-btn" onclick="restoreFromBackup()" style="background:#28a745;width:100%;">📦 恢复备份数据</button>
+  </div>
+  <button class="sync-btn secondary" onclick="hideSyncPanel()" style="margin-top:16px;">关闭</button>
+</div>
+
+<!-- Column Management Panel -->
+<div class="col-panel" id="colPanel">
+  <button class="panel-close-x" onclick="hideColPanel()" aria-label="关闭">✕</button>
+  <h3>📋 列管理</h3>
+  <div class="col-drag-hint">💡 长按 ⠿ 拖动可调整列顺序</div>
+  <div class="col-list" id="colList"></div>
+  <div id="colDeletedSection" class="col-deleted-section" style="display:none;">
+    <div class="col-deleted-title">已删除的内置列（可恢复）</div>
+    <div class="col-list" id="colDeletedList"></div>
+  </div>
+  <div class="col-add-row">
+    <input type="text" id="newColName" placeholder="输入新列名称..." />
+    <button class="btn btn-primary" onclick="addCustomColumnFromPanel()" style="flex-shrink:0;">➕ 添加</button>
+  </div>
+  <div style="margin-top:12px;display:flex;gap:8px;">
+    <button class="btn btn-outline btn-block btn-sm" onclick="restoreAllColumns()">恢复全部默认列</button>
+    <button class="sync-btn secondary" onclick="hideColPanel()">关闭</button>
+  </div>
+</div>
+
+<!-- File Input -->
+<input type="file" id="fileInput" accept=".xlsx,.xls" style="display:none" onchange="handleFileImport(event)">
+<input type="file" id="costFileInput" accept=".xlsx,.xls" style="display:none" onchange="handleCostImport(event)">
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<!-- Confirm Modal -->
+<div class="confirm-overlay" id="confirmOverlay">
+  <div class="confirm-modal">
+    <div class="confirm-text" id="confirmText"></div>
+    <div class="confirm-actions">
+      <button class="confirm-btn cancel" onclick="closeConfirm(false)">取消</button>
+      <button class="confirm-btn ok" onclick="closeConfirm(true)">确定</button>
+    </div>
+  </div>
+</div>
+
+<!-- Loading -->
+<div class="loading-overlay" id="loading"><div class="spinner"></div></div>
+
+<script>
+// ==================== Data ====================
+const BUILTIN_COLUMNS = [
+  { key: 'model', label: '型号', width: 170 },
+  { key: 'date', label: '日期', width: 60 },
+  { key: 'name', label: '收件人', width: 70 },
+  { key: 'address', label: '收件地址', width: 200 },
+  { key: 'trackingNo', label: '物流单号', width: 130 },
+  { key: 'qty', label: '数量', width: 50 },
+  { key: 'costUnitPrice', label: '单价(元)', width: 80 },
+  { key: 'costTotal', label: '金额(元)', width: 90, computed: true },
+  { key: 'shipping', label: '运费(元)', width: 70 },
+  { key: 'cod', label: '代收(元)', width: 60 },
+  { key: 'deposit', label: '定金(元)', width: 60 },
+  { key: 'fullpay', label: '全款(元)', width: 60 },
+  { key: 'aftersale', label: '售后', width: 90 },
+  { key: 'phone', label: '联系方式', width: 100 },
+  { key: 'remark', label: '备注', width: 140 },
+  { key: 'status', label: '状态', width: 70 }
+];
+// 列展示/表单的默认优先级顺序：型号置顶，其次按用户指定顺序，其余列往后
+const DEFAULT_COLUMN_ORDER = BUILTIN_COLUMNS.map(c => c.key);
+
+let COLUMNS = [...BUILTIN_COLUMNS];
+let customColumns = [];
+let deletedBuiltinKeys = [];
+let columnOrder = []; // custom column order (array of keys)
+let orders = [];
+let tombstones = []; // {id, deletedAt} - tracks deleted order IDs for sync
+let editingIdx = -1;
+// 订单列表的「状态筛选」：为空数组表示显示全部；否则仅显示所选状态
+let statusFilter = [];
+// 用户手动展开过的「作废」订单 _id 集合：避免每次重渲染把已展开的作废卡再次强制折叠
+let expandedVoidIds = new Set();
+// 统计页当前生效的自定义时间段（查询后生效）；为 null 时状态统计按全部订单
+let currentStatRange = null; // { start: 'YYYY-MM-DD', end: 'YYYY-MM-DD' }
+// 成本单价表（替换原「物流」模块）：按型号查成本单价；与订单一样按房间隔离，
+// 不同房间各自独立保存与同步，成本数据不会跨房间合并。
+let costTable = []; // [{ model, unitPrice, _updatedAt, brand }]
+const COST_STORAGE_KEY = 'tire_cost_table_v1';
+const COST_CLEARED_KEY = 'costClearedAt_v1';
+// 成本品牌导航状态
+const COST_USER_BRANDS_KEY = 'tire_cost_user_brands_v1';
+const COST_REMOVED_BRANDS_KEY = 'tire_cost_removed_brands_v1';
+const SEED_BRANDS = ['米其林','马牌','倍耐力','普利司通','邓禄普','固特异','韩泰','佳通','朝阳','玲珑','玛吉斯','优科豪马'];
+const BRAND_KEYWORDS = ['米其林','马牌','倍耐力','普利司通','邓禄普','固特异','韩泰','佳通','朝阳','玲珑','玛吉斯','优科豪马','正新','回力','锦湖','三角','赛轮','横滨','东洋','大陆'];
+let userBrands = [];      // 用户手动新增的品牌（持久化）
+let removedBrands = [];   // 用户从导航中隐藏的内置品牌（持久化）
+let costCurrentBrand = null; // null = 全部
+let costEditingIdx = -1;  // 正在内联编辑的成本行全局索引，-1 表示无
+// 成本表清空时间戳（用于云端/LAN 同步"清空"动作，避免 union 合并无法表达删除）；按房间隔离
+let costClearedAt = 0; // 实际值由 loadCostTable() 按当前房间读取
+// 当前页（用于云端同步后定向重渲染）
+let currentPageName = 'input';
+// 录入格式：'f1' = 格式一（含定金/全款/单价，单价按型号自动取成本且可手动修改）；
+//           'f2' = 格式二（去掉定金/全款，仅录入代收/到店安装等）
+let inputFormatMode = localStorage.getItem('tire_input_format') || 'f1';
+
+// ===== Sort state (排序：时间/金额/日期/状态) =====
+// 默认按"时间"倒序（由近到远），新添加的订单自动显示在顶部
+const SORT_FIELDS = [
+  { key: 'time',   label: '时间' },
+  { key: 'amount', label: '金额' },
+  { key: 'date',   label: '日期' },
+  { key: 'status', label: '状态' }
+];
+let sortField = localStorage.getItem('tireOrders_sortField') || 'time'; // 'time' | 'amount' | 'date' | 'status'
+let sortDir = localStorage.getItem('tireOrders_sortDir') || 'desc';     // 'asc' | 'desc'
+function saveSortPref() {
+  try {
+    localStorage.setItem('tireOrders_sortField', sortField);
+    localStorage.setItem('tireOrders_sortDir', sortDir);
+  } catch(e) {}
+}
+// 将日期字符串解析为可比较的时间戳（兼容 YYYY-MM-DD / YYYY/M/D / MM-DD / MM/DD）
+function dateToSortValue(s) {
+  if (!s || s === '-') return 0;
+  let m = String(s).match(/(\d{4})[\/\-.](\d{1,2})[\/\-.](\d{1,2})/);
+  if (m) return new Date(+m[1], +m[2] - 1, +m[3]).getTime();
+  m = String(s).match(/(\d{1,2})[\/\-.](\d{1,2})/);
+  if (m) return new Date(2000, +m[1] - 1, +m[2]).getTime();
+  const t = Date.parse(String(s).replace(/[\/.]/g, '-'));
+  return isNaN(t) ? 0 : t;
+}
+// 取得某订单在指定排序字段上的比较值
+function getSortValue(order, field) {
+  switch (field) {
+    case 'time':   return (order && order._updatedAt) ? order._updatedAt : 0;
+    case 'amount': return getOrderAmount(order || {});
+    case 'date':   return dateToSortValue(order && order.date);
+    case 'status': {
+      const idx = STATUS_OPTIONS.indexOf((order && order.status) || '');
+      return idx < 0 ? STATUS_OPTIONS.length : idx; // 未知状态排到最后
+    }
+    default:       return 0;
+  }
+}
+// 对订单数组排序（不修改原数组）
+function sortOrders(arr) {
+  const dir = (sortDir === 'asc') ? 1 : -1;
+  return arr.slice().sort((a, b) => {
+    const va = getSortValue(a, sortField);
+    const vb = getSortValue(b, sortField);
+    if (va < vb) return -1 * dir;
+    if (va > vb) return 1 * dir;
+    // 同值时按时间倒序作为次级排序，保证稳定
+    const ta = (a && a._updatedAt) || 0, tb = (b && b._updatedAt) || 0;
+    return tb - ta;
+  });
+}
+// 点击排序字段：再次点击切换升/降序，切换字段默认倒序（最新/最大在前）
+function setSortField(field) {
+  if (!SORT_FIELDS.some(f => f.key === field)) return;
+  if (sortField === field) {
+    sortDir = (sortDir === 'desc') ? 'asc' : 'desc';
+  } else {
+    sortField = field;
+    sortDir = 'desc';
+  }
+  saveSortPref();
+  updateSortBarUI();
+  renderOrderList();
+}
+// 更新排序栏 UI（高亮当前字段并显示方向箭头）
+function updateSortBarUI() {
+  document.querySelectorAll('.sort-btn').forEach(btn => {
+    const f = btn.getAttribute('data-field');
+    const caret = btn.querySelector('.sort-caret');
+    if (f === 'status') {
+      // 「状态」按钮为筛选入口：选中状态数 > 0 时高亮，并显示已选数量
+      const on = statusFilter.length > 0;
+      btn.classList.toggle('active', on);
+      if (caret) caret.textContent = on ? ('·' + statusFilter.length) : '';
+      return;
+    }
+    const active = (f === sortField);
+    btn.classList.toggle('active', active);
+    if (caret) {
+      caret.textContent = active ? (sortDir === 'desc' ? '▼' : '▲') : '';
+    }
+  });
+}
+
+// ==================== 状态筛选（点击排序栏「状态」展开） ====================
+function renderStatusFilterChips() {
+  const wrap = document.getElementById('statusFilterChips');
+  if (!wrap) return;
+  let html = '';
+  STATUS_OPTIONS.forEach(s => {
+    const on = statusFilter.includes(s);
+    html += `<span class="status-chip ${on ? 'on' : ''}" onclick="toggleStatusFilterValue('${s}')">${s}</span>`;
+  });
+  wrap.innerHTML = html;
+}
+function toggleStatusFilter() {
+  const pop = document.getElementById('statusFilterPop');
+  if (!pop) return;
+  const willShow = (pop.style.display !== 'block');
+  pop.style.display = willShow ? 'block' : 'none';
+  if (willShow) renderStatusFilterChips();
+}
+function toggleStatusFilterValue(s) {
+  const i = statusFilter.indexOf(s);
+  if (i >= 0) statusFilter.splice(i, 1);
+  else statusFilter.push(s);
+  renderStatusFilterChips();
+  updateSortBarUI();
+  renderOrderList();
+}
+function clearStatusFilter() {
+  statusFilter = [];
+  renderStatusFilterChips();
+  updateSortBarUI();
+  renderOrderList();
+}
+function closeStatusFilter() {
+  const pop = document.getElementById('statusFilterPop');
+  if (pop) pop.style.display = 'none';
+}
+
+const STORAGE_KEY_ORDERS = 'tireOrders_workbench_v2';
+const STORAGE_KEY_COLS = 'tireOrders_customCols_v2';
+const STORAGE_KEY_DELETED_BUILTIN = 'tireOrders_deletedBuiltin_v1';
+const STORAGE_KEY_COL_ORDER = 'tireOrders_colOrder_v1';
+const STORAGE_KEY_TOMBSTONES = 'tireOrders_tombstones_v1';
+// Per-room local storage: each cloud sync room keeps its data completely separate,
+// so switching rooms never mixes/overwrites data and never pushes the current page
+// into the new room until the switch has succeeded.
+function roomStoreKey(base) {
+  return cloudRoomCode ? (base + '_' + cloudRoomCode) : base;
+}
+function loadRoomJSON(base) {
+  const key = roomStoreKey(base);
+  let raw = localStorage.getItem(key);
+  if (!raw && key !== base) {
+    // First run with per-room storage: migrate legacy flat data into the current room once
+    const legacy = localStorage.getItem(base);
+    if (legacy && !localStorage.getItem(base + '__migrated')) {
+      raw = legacy;
+      try { localStorage.setItem(key, legacy); } catch(e) {}
+      localStorage.setItem(base + '__migrated', '1');
+    }
+  }
+  return raw;
+}
+function saveRoomJSON(base, value) {
+  try { localStorage.setItem(roomStoreKey(base), JSON.stringify(value)); } catch(e) {}
+}
+const STATUS_OPTIONS = ['未发货', '已发货', '签收', '拒收', '作废'];
+
+// Migrate old status values
+function migrateStatus(o) {
+  if (o.status === '正常') o.status = '签收';
+  if (o.status === '待确认') o.status = '未发货';
+}
+
+// Rebuild COLUMNS array from builtin (minus deleted) + custom, always sorted by the
+// fixed priority order (型号置顶，日期/收件人/收件地址/物流单号/单价/数量/总货款/定金/代收 优先，
+// 其余列往后；自定义列排在最后)。这样既保证「重新排版」对所有设备/房间统一生效，
+// 又保留用户在「列管理」中隐藏/显示列的选择。
+function rebuildColumns() {
+  var allCols = [
+    ...BUILTIN_COLUMNS.filter(c => !deletedBuiltinKeys.includes(c.key)),
+    ...customColumns
+  ];
+  var rank = {};
+  DEFAULT_COLUMN_ORDER.forEach(function(k, i) { rank[k] = i; });
+  allCols.sort(function(a, b) {
+    var ra = (a.key in rank) ? rank[a.key] : 9999;
+    var rb = (b.key in rank) ? rank[b.key] : 9999;
+    if (ra !== rb) return ra - rb;
+    return 0;
+  });
+  COLUMNS = allCols;
+  // 同步一份顺序到 columnOrder（用于云端同步/导出兼容），不影响上文排序
+  columnOrder = COLUMNS.map(function(c) { return c.key; });
+}
+
+// ==================== Load/Save ====================
+
+// Generate unique order ID
+function genOrderId() {
+  return 'o_' + Date.now().toString(36) + '_' + Math.random().toString(36).substr(2, 6);
+}
+
+// Ensure every order has _id and _updatedAt
+function ensureOrdersHaveIds() {
+  orders.forEach(o => {
+    if (!o._id) o._id = genOrderId();
+    if (!o._updatedAt) o._updatedAt = Date.now();
+  });
+}
+
+// Load tombstones from localStorage
+function loadTombstones() {
+  const saved = loadRoomJSON(STORAGE_KEY_TOMBSTONES);
+  if (saved) {
+    try { tombstones = JSON.parse(saved); } catch(e) { tombstones = []; }
+  }
+}
+
+// Save tombstones to localStorage
+function saveTombstones() {
+  saveRoomJSON(STORAGE_KEY_TOMBSTONES, tombstones);
+}
+
+function loadData() {
+  const saved = loadRoomJSON(STORAGE_KEY_ORDERS);
+  if (saved) {
+    try {
+      orders = JSON.parse(saved);
+      orders.forEach(o => {
+        migrateStatus(o);
+        pruneRemovedColumns(o);
+        ['channel', 'signer', 'unitPrice', 'totalAmount'].forEach(key => {
+          if (!(key in o) || o[key] === undefined || o[key] === null) o[key] = '-';
+        });
+        // 旧数据：brand/spec 合并为 model（型号）
+        if (!o.model && (o.brand || o.spec)) {
+          o.model = [o.brand, o.spec].filter(v => v && v !== '-').join(' ').trim();
+        }
+      });
+    } catch(e) { orders = []; }
+  } else {
+    // No data for this room yet: start empty (do NOT keep previous room's data in memory)
+    orders = [];
+    // Very old (pre-v2) legacy data: migrate into the current room ONCE, never leak across rooms
+    const v1raw = localStorage.getItem('tireOrders_workbench');
+    if (v1raw && !localStorage.getItem('tireOrders_workbench__migrated')) {
+      try {
+        const v1 = JSON.parse(v1raw);
+      v1.forEach(o => {
+        migrateStatus(o);
+        pruneRemovedColumns(o);
+        ['channel', 'signer', 'unitPrice', 'totalAmount'].forEach(key => {
+            if (!(key in o) || o[key] === undefined || o[key] === null) o[key] = '-';
+          });
+          // 旧数据：brand/spec 合并为 model（型号）
+          if (!o.model && (o.brand || o.spec)) {
+            o.model = [o.brand, o.spec].filter(v => v && v !== '-').join(' ').trim();
+          }
+        });
+        orders = v1;
+        saveRoomJSON(STORAGE_KEY_ORDERS, orders);
+        localStorage.setItem('tireOrders_workbench__migrated', '1');
+      } catch(e) { orders = []; }
+    }
+  }
+  // Ensure all orders have IDs and timestamps
+  ensureOrdersHaveIds();
+  // Load tombstones
+  loadTombstones();
+  // Clean any orders that are in tombstones (shouldn't be, but safety)
+  const tombIds = new Set(tombstones.map(t => t.id));
+  orders = orders.filter(o => o && typeof o === 'object' && !tombIds.has(o._id));
+}
+function loadCustomColumns() {
+  const savedCols = loadRoomJSON(STORAGE_KEY_COLS);
+  if (savedCols) {
+    try { customColumns = JSON.parse(savedCols); } catch(e) { customColumns = []; }
+  }
+  const savedDeleted = loadRoomJSON(STORAGE_KEY_DELETED_BUILTIN);
+  if (savedDeleted) {
+    try { deletedBuiltinKeys = JSON.parse(savedDeleted); } catch(e) { deletedBuiltinKeys = []; }
+  }
+  const savedOrder = loadRoomJSON(STORAGE_KEY_COL_ORDER);
+  if (savedOrder) {
+    try { columnOrder = JSON.parse(savedOrder); } catch(e) { columnOrder = []; }
+  }
+  rebuildColumns();
+}
+function saveDeletedBuiltinKeys() {
+  saveRoomJSON(STORAGE_KEY_DELETED_BUILTIN, deletedBuiltinKeys);
+  syncToServerDebounced();
+}
+function saveData() {
+  ensureOrdersHaveIds();
+  saveRoomJSON(STORAGE_KEY_ORDERS, orders);
+  saveTombstones();
+  syncToServerDebounced();
+}
+function saveCustomColumns() {
+  saveRoomJSON(STORAGE_KEY_COLS, customColumns);
+  syncToServerDebounced();
+}
+function saveColumnOrder() {
+  columnOrder = COLUMNS.map(c => c.key);
+  saveRoomJSON(STORAGE_KEY_COL_ORDER, columnOrder);
+  syncToServerDebounced();
+}
+
+// ==================== Cloud Sync ====================
+let syncEnabled = false;
+let serverLastUpdate = 0;
+let lastSyncTime = 0;
+let syncPollTimer = null;
+let syncDebounceTimer = null;
+let customServerURL = localStorage.getItem('syncServerURL') || '';
+
+function getApiBase() {
+  if (customServerURL) return customServerURL.replace(/\/$/, '');
+  return ''; // Same origin
+}
+
+async function initSync() {
+  updateSyncStatus('connecting');
+  try {
+    const resp = await fetch(getApiBase() + '/api/data?room=' + encodeURIComponent(cloudRoomCode || 'default'), { signal: AbortSignal.timeout(5000) });
+    if (resp.ok) {
+      syncEnabled = true;
+      const data = await resp.json();
+      serverLastUpdate = data.lastUpdate || 0;
+
+      // If server has data, sync it with local data
+      if (data.orders && data.orders.length > 0) {
+        createAutoBackup();
+        orders = syncOrders(orders, data.orders, data.tombstones || []);
+        orders.forEach(o => {
+          migrateStatus(o);
+          if (!o._id) { o._id = genOrderId(); }
+          if (!o._updatedAt) { o._updatedAt = Date.now(); }
+          pruneRemovedColumns(o);
+          ['channel', 'signer', 'unitPrice', 'totalAmount'].forEach(key => {
+            if (!(key in o) || o[key] === undefined || o[key] === null) o[key] = '-';
+          });
+        });
+        if (data.customColumns) {
+          customColumns = data.customColumns;
+        }
+        if (data.deletedBuiltinKeys) {
+          deletedBuiltinKeys = data.deletedBuiltinKeys;
+          localStorage.setItem(STORAGE_KEY_DELETED_BUILTIN, JSON.stringify(deletedBuiltinKeys));
+        }
+        if (data.columnOrder) {
+          columnOrder = data.columnOrder;
+          localStorage.setItem(STORAGE_KEY_COL_ORDER, JSON.stringify(columnOrder));
+        }
+        rebuildColumns();
+        localStorage.setItem(STORAGE_KEY_ORDERS, JSON.stringify(orders));
+        localStorage.setItem(STORAGE_KEY_COLS, JSON.stringify(customColumns));
+        renderOrderList();
+        updateStatsBar();
+        lastSyncTime = Date.now();
+      } else if (orders.length > 0) {
+        // Server is empty but we have local data, push to server
+        await syncToServer();
+      }
+
+      // 成本表按房间隔离（server 已在对应房间桶返回 costTable）
+      if (data.costTable) {
+        syncCostTable(data.costTable, data.costClearedAt || 0);
+        if (currentPageName === 'cost') renderCostTable();
+      }
+
+      updateSyncStatus('synced');
+      // Start polling for changes from other devices
+      if (syncPollTimer) clearInterval(syncPollTimer);
+      syncPollTimer = setInterval(pollServer, 10000);
+    } else {
+      throw new Error('Server returned ' + resp.status);
+    }
+  } catch(e) {
+    syncEnabled = false;
+    updateSyncStatus('offline');
+  }
+}
+
+async function syncToServer() {
+  if (!syncEnabled) return;
+  try {
+    updateSyncStatus('syncing');
+    const resp = await fetch(getApiBase() + '/api/data?room=' + encodeURIComponent(cloudRoomCode || 'default'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ orders, tombstones, customColumns, deletedBuiltinKeys, columnOrder, costTable, costClearedAt, room: cloudRoomCode || 'default' })
+    });
+    if (resp.ok) {
+      const data = await resp.json();
+      serverLastUpdate = data.lastUpdate;
+      lastSyncTime = Date.now();
+      updateSyncStatus('synced');
+    } else {
+      throw new Error('Server returned ' + resp.status);
+    }
+  } catch(e) {
+    updateSyncStatus('offline');
+    syncEnabled = false;
+    // Retry after 30 seconds
+    setTimeout(() => { if (!syncEnabled) initSync(); }, 30000);
+  }
+}
+
+function syncToServerDebounced() {
+  if (syncEnabled) {
+    if (syncDebounceTimer) clearTimeout(syncDebounceTimer);
+    syncDebounceTimer = setTimeout(syncToServer, 800);
+  }
+  // Also publish to cloud (MQTT) for cross-network sync
+  cloudPublishData();
+}
+
+async function pollServer() {
+  if (!syncEnabled) return;
+  try {
+    const resp = await fetch(getApiBase() + '/api/data?room=' + encodeURIComponent(cloudRoomCode || 'default'), { signal: AbortSignal.timeout(5000) });
+    if (resp.ok) {
+      const data = await resp.json();
+      if (data.lastUpdate > serverLastUpdate) {
+        // Server has newer data from another device
+        serverLastUpdate = data.lastUpdate;
+        const serverOrders = data.orders || [];
+        // Safety: skip if server is empty and local has data and no tombstones
+        if (serverOrders.length === 0 && orders.length > 0 && (!data.tombstones || data.tombstones.length === 0)) {
+          console.warn('Poll: server has 0 orders, local has ' + orders.length + '. Skipping.');
+          return;
+        }
+        // Create backup and sync (handles add/update/delete)
+        createAutoBackup();
+        orders = syncOrders(orders, serverOrders, data.tombstones || []);
+        orders.forEach(o => {
+          migrateStatus(o);
+          if (!o._id) { o._id = genOrderId(); }
+          if (!o._updatedAt) { o._updatedAt = Date.now(); }
+          pruneRemovedColumns(o);
+          ['channel', 'signer', 'unitPrice', 'totalAmount'].forEach(key => {
+            if (!(key in o) || o[key] === undefined || o[key] === null) o[key] = '-';
+          });
+        });
+        if (data.customColumns) {
+          customColumns = data.customColumns;
+        }
+        if (data.deletedBuiltinKeys) {
+          deletedBuiltinKeys = data.deletedBuiltinKeys;
+          localStorage.setItem(STORAGE_KEY_DELETED_BUILTIN, JSON.stringify(deletedBuiltinKeys));
+        }
+        if (data.columnOrder) {
+          columnOrder = data.columnOrder;
+          localStorage.setItem(STORAGE_KEY_COL_ORDER, JSON.stringify(columnOrder));
+        }
+        rebuildColumns();
+        localStorage.setItem(STORAGE_KEY_ORDERS, JSON.stringify(orders));
+        renderOrderList();
+        updateStatsBar();
+        lastSyncTime = Date.now();
+        updateSyncStatus('synced');
+        // Show a subtle notification
+        showToast('数据已从其他设备同步', 'info');
+      }
+      // 成本表按房间隔离（server 已在对应房间桶返回 costTable）
+      if (data.costTable) {
+        syncCostTable(data.costTable, data.costClearedAt || 0);
+        if (currentPageName === 'cost') renderCostTable();
+      }
+    }
+  } catch(e) {
+    // Silent fail on poll, don't disrupt user
+    updateSyncStatus('offline');
+  }
+}
+
+function updateSyncStatus(status) {
+  const dot = document.getElementById('syncDot');
+  const text = document.getElementById('syncText');
+  const indicator = document.getElementById('syncStatus');
+  if (!dot || !text) return;
+
+  indicator.className = 'sync-indicator';
+  if (status === 'synced') {
+    dot.className = 'sync-dot synced';
+    text.textContent = '已同步';
+    indicator.classList.add('synced');
+  } else if (status === 'syncing') {
+    dot.className = 'sync-dot syncing';
+    text.textContent = '同步中';
+    indicator.classList.add('syncing');
+  } else if (status === 'connecting') {
+    dot.className = 'sync-dot syncing';
+    text.textContent = '连接中';
+    indicator.classList.add('syncing');
+  } else if (status === 'offline') {
+    // If cloud sync is connected, show cloud status instead of offline
+    if (cloudConnected) {
+      dot.className = 'sync-dot synced';
+      text.textContent = '云端同步';
+      indicator.classList.add('synced');
+    } else {
+      dot.className = 'sync-dot offline';
+      text.textContent = '离线模式';
+      indicator.classList.add('offline');
+    }
+  }
+}
+
+async function manualSync() {
+  if (syncEnabled) {
+    await syncToServer();
+  }
+  if (cloudConnected) {
+    cloudPublishData(true);
+    setTimeout(() => publishSyncRequest(), 500);
+    showToast('同步完成', 'success');
+  } else if (!syncEnabled) {
+    showToast('正在重新连接...', 'info');
+    initCloudSync();
+    await initSync();
+  }
+  updateSyncPanelInfo();
+}
+
+function showSyncPanel() {
+  document.getElementById('syncPanel').classList.add('show');
+  document.getElementById('syncServerInput').value = customServerURL;
+  const cloudInput = document.getElementById('cloudRoomInput');
+  if (cloudInput) cloudInput.value = cloudRoomCode;
+  updateSyncPanelInfo();
+  updateCloudStatus(cloudConnected ? 'connected' : 'connecting');
+  generateQRCode();
+}
+
+function hideSyncPanel() {
+  document.getElementById('syncPanel').classList.remove('show');
+}
+
+function updateSyncPanelInfo() {
+  const dot = document.getElementById('syncDot');
+  const text = document.getElementById('syncText');
+  document.getElementById('syncPanelStatus').innerHTML =
+    `<span class="sync-dot ${dot.className.split(' ')[1] || ''}"></span> ${text.textContent}`;
+  document.getElementById('syncPanelCount').textContent = orders.length + ' 条';
+  if (lastSyncTime > 0) {
+    const d = new Date(lastSyncTime);
+    document.getElementById('syncPanelTime').textContent =
+      d.toLocaleDateString() + ' ' + d.toLocaleTimeString();
+  }
+  document.getElementById('syncPanelServer').textContent =
+    customServerURL || (location.origin || '同源服务器');
+  // Update cloud status in panel
+  updateCloudStatus(cloudConnected ? 'connected' : (cloudClient ? 'connecting' : 'disconnected'));
+}
+
+function saveSyncServer() {
+  const input = document.getElementById('syncServerInput').value.trim();
+  customServerURL = input;
+  localStorage.setItem('syncServerURL', input);
+  showToast('服务器地址已保存，正在重新连接...', 'success');
+  // Reconnect
+  syncEnabled = false;
+  if (syncPollTimer) clearInterval(syncPollTimer);
+  initSync().then(() => {
+    updateSyncPanelInfo();
+    generateQRCode();
+  });
+}
+
+// ==================== Cloud Sync (MQTT over WebSocket) ====================
+let cloudClient = null;
+let cloudConnected = false;
+let cloudRoomCode = localStorage.getItem('cloudRoomCode') || '';
+let cloudDataTimestamp = parseInt(localStorage.getItem('cloudDataTimestamp') || '0');
+let cloudDebounceTimer = null;
+let cloudPollTimer = null;
+const MQTT_BROKER_URL = 'wss://broker.hivemq.com:8884/mqtt';
+const MQTT_TOPIC_PREFIX = 'tire-workbench-v2/';
+// 成本表与订单一样按房间独立同步：不再使用全局 topic，每个房间各自一个成本 topic，
+// 这样不同房间的成本数据不会跨房间合并（同一房间内多设备仍照常 LWW 合并）。
+function costMqttTopic() {
+  return MQTT_TOPIC_PREFIX + (cloudRoomCode || 'default') + '/cost';
+}
+
+// Create auto-backup of current data before any cloud sync overwrites it
+function createAutoBackup() {
+  if (orders.length === 0) return;
+  const backup = {
+    orders: orders,
+    customColumns: customColumns,
+    deletedBuiltinKeys: deletedBuiltinKeys,
+    timestamp: Date.now()
+  };
+  try {
+    localStorage.setItem('tireOrders_autobackup', JSON.stringify(backup));
+    // Keep last 3 backups with timestamps
+    const backupKey = 'tireOrders_autobackup_' + Date.now();
+    localStorage.setItem(backupKey, JSON.stringify(backup));
+    // Clean old backups (keep last 3)
+    const allKeys = Object.keys(localStorage).filter(k => k.startsWith('tireOrders_autobackup_'));
+    if (allKeys.length > 3) {
+      allKeys.sort().slice(0, allKeys.length - 3).forEach(k => localStorage.removeItem(k));
+    }
+  } catch(e) {
+    console.error('Auto-backup failed:', e);
+  }
+}
+
+// Sync merge: properly handles add/update/delete using _id, _updatedAt, and tombstones
+function syncOrders(localOrders, remoteOrders, remoteTombstones) {
+  // Merge tombstones: union of local and remote, keep latest deletedAt per id
+  const tombMap = new Map();
+  tombstones.forEach(t => tombMap.set(t.id, t.deletedAt));
+  if (remoteTombstones) {
+    remoteTombstones.forEach(t => {
+      const existing = tombMap.get(t.id);
+      if (!existing || t.deletedAt > existing) {
+        tombMap.set(t.id, t.deletedAt);
+      }
+    });
+  }
+  // Update global tombstones
+  tombstones = Array.from(tombMap.entries()).map(([id, deletedAt]) => ({ id, deletedAt }));
+  // Keep only last 200 tombstones to prevent unbounded growth
+  if (tombstones.length > 200) {
+    tombstones.sort((a, b) => b.deletedAt - a.deletedAt);
+    tombstones = tombstones.slice(0, 200);
+  }
+  saveTombstones();
+
+  const tombIds = new Set(tombstones.map(t => t.id));
+
+  // Build map of local orders by _id
+  const localMap = new Map();
+  localOrders.forEach(o => {
+    if (o._id) localMap.set(o._id, o);
+  });
+
+  // Build map of remote orders by _id
+  const remoteMap = new Map();
+  if (remoteOrders) {
+    remoteOrders.forEach(o => {
+      if (o._id) remoteMap.set(o._id, o);
+    });
+  }
+
+  const result = [];
+  const seenIds = new Set();
+
+  // Process remote orders: add/update
+  remoteMap.forEach((remoteOrder, id) => {
+    if (tombIds.has(id)) return; // Skip tombstoned
+    seenIds.add(id);
+    const localOrder = localMap.get(id);
+    if (!localOrder) {
+      // New from remote
+      result.push(remoteOrder);
+    } else {
+      // Exists in both: take newer version
+      const remoteTime = remoteOrder._updatedAt || 0;
+      const localTime = localOrder._updatedAt || 0;
+      if (remoteTime >= localTime) {
+        result.push(remoteOrder);
+      } else {
+        result.push(localOrder);
+      }
+    }
+  });
+
+  // Process local-only orders: keep unless tombstoned
+  localMap.forEach((localOrder, id) => {
+    if (seenIds.has(id)) return; // Already handled
+    if (tombIds.has(id)) return; // Tombstoned
+    result.push(localOrder);
+  });
+
+  // Sort by original order (keep local order preference)
+  // Preserves the order of local orders, appends new remote orders at end
+  console.log(`Sync: local=${localOrders.length}, remote=${remoteOrders ? remoteOrders.length : 0}, result=${result.length}, tombstones=${tombstones.length}`);
+  return result;
+}
+
+// Restore data from auto-backup
+function restoreFromBackup() {
+  const backupStr = localStorage.getItem('tireOrders_autobackup');
+  if (!backupStr) {
+    showToast('没有找到备份数据', 'error');
+    return;
+  }
+  try {
+    const backup = JSON.parse(backupStr);
+    if (!backup.orders || backup.orders.length === 0) {
+      showToast('备份数据为空', 'error');
+      return;
+    }
+    showConfirm(
+      `找到备份数据：${backup.orders.length} 条订单\n备份时间：${new Date(backup.timestamp).toLocaleString()}\n\n确定要恢复吗？当前数据将被替换。`,
+      () => {
+        orders = backup.orders;
+        if (backup.customColumns) customColumns = backup.customColumns;
+        if (backup.deletedBuiltinKeys) deletedBuiltinKeys = backup.deletedBuiltinKeys;
+        rebuildColumns();
+        localStorage.setItem(STORAGE_KEY_ORDERS, JSON.stringify(orders));
+        localStorage.setItem(STORAGE_KEY_COLS, JSON.stringify(customColumns));
+        localStorage.setItem(STORAGE_KEY_DELETED_BUILTIN, JSON.stringify(deletedBuiltinKeys));
+        saveData();
+        renderOrderList();
+        updateStatsBar();
+        showToast(`已恢复 ${orders.length} 条订单数据！`, 'success');
+      }
+    );
+  } catch(e) {
+    showToast('备份文件损坏：' + e.message, 'error');
+  }
+}
+
+function generateRoomCode() {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let code = '';
+  for (let i = 0; i < 6; i++) code += chars[Math.floor(Math.random() * chars.length)];
+  return code;
+}
+
+function getCloudRoomCode() {
+  // Check URL hash first
+  const hash = location.hash.match(/room=([^&]+)/);
+  if (hash && hash[1]) {
+    cloudRoomCode = hash[1].toUpperCase();
+    localStorage.setItem('cloudRoomCode', cloudRoomCode);
+    return cloudRoomCode;
+  }
+  // Check localStorage
+  if (cloudRoomCode) return cloudRoomCode;
+  // Generate new code
+  cloudRoomCode = generateRoomCode();
+  localStorage.setItem('cloudRoomCode', cloudRoomCode);
+  return cloudRoomCode;
+}
+
+function updateCloudRoomCodeInURL() {
+  const hash = 'room=' + cloudRoomCode;
+  if (location.hash !== '#' + hash) {
+    history.replaceState(null, '', '#' + hash);
+  }
+}
+
+function updateCloudStatus(status) {
+  const el = document.getElementById('cloudSyncStatus');
+  if (!el) return;
+  if (status === 'connected') {
+    el.innerHTML = '<span style="color:#28a745;">● 已连接 (' + orders.length + '条)</span>';
+  } else if (status === 'connecting') {
+    el.innerHTML = '<span style="color:#ffc107;">● 连接中...</span>';
+  } else if (status === 'disconnected') {
+    el.innerHTML = '<span style="color:#dc3545;">● 未连接</span>';
+  }
+  const codeEl = document.getElementById('cloudRoomCodeDisplay');
+  if (codeEl) codeEl.textContent = cloudRoomCode || '-';
+  // Also update top bar sync indicator
+  const topIndicator = document.getElementById('syncIndicator');
+  if (topIndicator) {
+    if (status === 'connected') {
+      topIndicator.classList.remove('offline');
+      const dot = topIndicator.querySelector('.sync-dot');
+      const text = topIndicator.querySelector('.sync-text');
+      if (dot) dot.className = 'sync-dot synced';
+      if (text) text.textContent = '云端同步';
+    } else if (status === 'connecting') {
+      const dot = topIndicator.querySelector('.sync-dot');
+      const text = topIndicator.querySelector('.sync-text');
+      if (dot) dot.className = 'sync-dot syncing';
+      if (text) text.textContent = '连接中...';
+    } else {
+      topIndicator.classList.add('offline');
+      const dot = topIndicator.querySelector('.sync-dot');
+      const text = topIndicator.querySelector('.sync-text');
+      if (dot) dot.className = 'sync-dot offline';
+      if (text) text.textContent = '未连接';
+    }
+  }
+}
+
+function initCloudSync() {
+  const roomCode = getCloudRoomCode();
+  updateCloudRoomCodeInURL();
+  updateCloudStatus('connecting');
+
+  const input = document.getElementById('cloudRoomInput');
+  if (input) input.value = roomCode;
+
+  const topic = MQTT_TOPIC_PREFIX + roomCode;
+
+  // Check if MQTT library loaded
+  if (typeof mqtt === 'undefined') {
+    console.error('MQTT library not loaded! CDN may be blocked.');
+    updateCloudStatus('disconnected');
+    return;
+  }
+
+  try {
+    if (cloudClient) {
+      try { cloudClient.end(true); } catch(e) {}
+    }
+    cloudClient = mqtt.connect(MQTT_BROKER_URL, {
+      clientId: 'tire_' + Math.random().toString(16).substr(2, 8),
+      clean: true,
+      connectTimeout: 10000,
+      keepalive: 30,
+      reconnectPeriod: 3000
+    });
+
+    cloudClient.on('connect', () => {
+      cloudConnected = true;
+      cloudClient.subscribe(topic, { qos: 0 });
+      cloudClient.subscribe(costMqttTopic(), { qos: 0 });
+      cloudClient.subscribe(roomNameMqttTopic(), { qos: 0 });
+      updateCloudStatus('connected');
+      // 应用并广播本房间显示名（本地优先，云端再同步）
+      applyRoomDisplayName();
+      publishRoomNameToCloud();
+      
+      // Publish local data on connect (with retain so late devices get it)
+      // Even if we have 0 orders, publish so other devices know we're here
+      setTimeout(() => {
+        cloudPublishData(true);
+        publishCostToCloud();
+        // Also send a sync request asking other devices to share their data
+        publishSyncRequest();
+      }, 500);
+      
+      // Start periodic re-publish to keep data fresh (every 20 seconds)
+      if (cloudPollTimer) clearInterval(cloudPollTimer);
+      cloudPollTimer = setInterval(() => {
+        if (cloudConnected && orders.length > 0) {
+          cloudPublishData(false);
+        }
+      }, 20000);
+    });
+
+    cloudClient.on('message', (msgTopic, message) => {
+      try {
+        const data = JSON.parse(message.toString());
+
+        // Handle cost-table sync (per-room topic: only same-room cost arrives here)
+        if (data.type === 'cost') {
+          syncCostTable(data.costTable, data.costClearedAt || 0);
+          if (currentPageName === 'cost') renderCostTable();
+          return;
+        }
+
+        // Handle room display-name sync (per-room meta topic: only same-room name arrives here)
+        if (data.type === 'meta') {
+          if (data.code && data.code === (cloudRoomCode || '')) {
+            setRoomName(data.code, data.name || '');
+            applyRoomDisplayName();
+          }
+          return;
+        }
+        
+        // Handle sync request from other devices
+        if (data.type === 'sync_request') {
+          console.log('Received sync request from another device');
+          if (orders.length > 0) {
+            // Respond by publishing our data
+            setTimeout(() => cloudPublishData(true), 200 + Math.random() * 800);
+          }
+          return;
+        }
+        
+        // Handle regular data sync
+        // Always merge (idempotent). Do NOT reject based on publish timestamp:
+        // a deletion (tombstone) published earlier must still propagate, otherwise
+        // the "not-deleted" side keeps re-publishing stale data and resurrects it.
+        if (data.orders !== undefined || (data.tombstones && data.tombstones.length > 0)) {
+          if (data.timestamp) {
+            cloudDataTimestamp = data.timestamp;
+            localStorage.setItem('cloudDataTimestamp', cloudDataTimestamp);
+          }
+
+          // Safety: if remote is empty AND local has data AND no tombstones, skip
+          if (data.orders && data.orders.length === 0 && orders.length > 0 && (!data.tombstones || data.tombstones.length === 0)) {
+            console.warn('Cloud sync: received empty orders with no tombstones but local has data. Ignoring.');
+            return;
+          }
+
+          const prevOrdersJson = JSON.stringify(orders);
+          // Use syncOrders for proper add/update/delete sync (LWW by _updatedAt + tombstone union)
+          const mergedOrders = syncOrders(orders, data.orders || [], data.tombstones || []);
+          mergedOrders.forEach(o => {
+            migrateStatus(o);
+            if (!o._id) { o._id = genOrderId(); }
+            if (!o._updatedAt) { o._updatedAt = Date.now(); }
+            pruneRemovedColumns(o);
+            ['channel', 'signer', 'unitPrice', 'totalAmount'].forEach(key => {
+              if (!(key in o) || o[key] === undefined || o[key] === null) o[key] = '-';
+            });
+          });
+          const ordersChanged = JSON.stringify(mergedOrders) !== prevOrdersJson;
+
+          if (ordersChanged) {
+            createAutoBackup();
+          }
+          orders = mergedOrders;
+
+          if (data.customColumns !== undefined) {
+            customColumns = data.customColumns;
+            localStorage.setItem(STORAGE_KEY_COLS, JSON.stringify(customColumns));
+          }
+          if (data.deletedBuiltinKeys) {
+            deletedBuiltinKeys = data.deletedBuiltinKeys;
+            localStorage.setItem(STORAGE_KEY_DELETED_BUILTIN, JSON.stringify(deletedBuiltinKeys));
+          }
+          if (data.columnOrder) {
+            columnOrder = data.columnOrder;
+            localStorage.setItem(STORAGE_KEY_COL_ORDER, JSON.stringify(columnOrder));
+          }
+
+          if (ordersChanged) {
+            rebuildColumns();
+            localStorage.setItem(STORAGE_KEY_ORDERS, JSON.stringify(orders));
+            renderOrderList();
+            updateStatsBar();
+            showToast('数据已从云端同步', 'info');
+          } else {
+            localStorage.setItem(STORAGE_KEY_ORDERS, JSON.stringify(orders));
+          }
+        }
+      } catch(e) {
+        console.error('Cloud sync message error:', e);
+      }
+    });
+
+    cloudClient.on('error', (err) => {
+      console.error('Cloud sync error:', err.message);
+    });
+
+    cloudClient.on('close', () => {
+      cloudConnected = false;
+      updateCloudStatus('disconnected');
+      if (cloudPollTimer) { clearInterval(cloudPollTimer); cloudPollTimer = null; }
+    });
+
+    cloudClient.on('reconnect', () => {
+      updateCloudStatus('connecting');
+    });
+
+  } catch(e) {
+    console.error('Cloud sync init error:', e);
+    updateCloudStatus('disconnected');
+  }
+}
+
+// Publish a sync request asking other devices to share their data
+function publishSyncRequest() {
+  if (!cloudConnected || !cloudClient) return;
+  const roomCode = getCloudRoomCode();
+  const topic = MQTT_TOPIC_PREFIX + roomCode;
+  try {
+    const msg = JSON.stringify({ type: 'sync_request', timestamp: Date.now() });
+    cloudClient.publish(topic, msg, { qos: 0, retain: false });
+  } catch(e) {
+    console.error('Sync request error:', e);
+  }
+}
+
+function cloudPublishData(isOnConnect) {
+  if (!cloudConnected || !cloudClient) return;
+  // Allow publishing even with 0 orders if we have tombstones (deletion sync)
+  if (orders.length === 0 && tombstones.length === 0) {
+    console.log('Cloud publish skipped: no data and no tombstones');
+    return;
+  }
+  if (cloudDebounceTimer) clearTimeout(cloudDebounceTimer);
+  cloudDebounceTimer = setTimeout(() => {
+    const roomCode = getCloudRoomCode();
+    const topic = MQTT_TOPIC_PREFIX + roomCode;
+    cloudDataTimestamp = Date.now();
+    localStorage.setItem('cloudDataTimestamp', cloudDataTimestamp);
+
+    // Ensure all orders have IDs before publishing
+    ensureOrdersHaveIds();
+
+    const payload = {
+      orders: orders,
+      tombstones: tombstones,
+      customColumns: customColumns,
+      deletedBuiltinKeys: deletedBuiltinKeys,
+      columnOrder: COLUMNS.map(c => c.key),
+      timestamp: cloudDataTimestamp
+    };
+
+    try {
+      const msg = JSON.stringify(payload);
+      // Use retain: true so late-connecting devices immediately get the latest data
+      cloudClient.publish(topic, msg, { qos: 0, retain: true });
+      console.log('Cloud published: ' + orders.length + ' orders, ' + tombstones.length + ' tombstones, timestamp=' + cloudDataTimestamp);
+    } catch(e) {
+      console.error('Cloud publish error:', e);
+    }
+  }, isOnConnect ? 0 : 500);
+}
+
+// Publish cost table to the global cost topic (retain so late devices get it)
+function publishCostToCloud() {
+  if (!cloudConnected || !cloudClient) return;
+  try {
+    const msg = JSON.stringify({
+      type: 'cost',
+      costTable: costTable,
+      costClearedAt: costClearedAt,
+      timestamp: Date.now()
+    });
+    cloudClient.publish(costMqttTopic(), msg, { qos: 0, retain: true });
+    console.log('Cloud published cost table: ' + costTable.length + ' items');
+  } catch(e) {
+    console.error('Cost publish error:', e);
+  }
+}
+
+// Force sync: immediately publish local data and request data from others
+function forceSyncNow() {
+  if (!cloudConnected) {
+    showToast('云端未连接，正在重连...', 'error');
+    initCloudSync();
+    return;
+  }
+  if (orders.length === 0 && tombstones.length === 0) {
+    // No local data and no deletions, request from other devices
+    publishSyncRequest();
+    showToast('已向其他设备请求数据...', 'info');
+  } else {
+    // Have data, publish immediately
+    cloudPublishData(true);
+    showToast('正在推送 ' + orders.length + ' 条数据到云端...', 'success');
+  }
+  // 同时推送成本表并请求成本数据
+  publishCostToCloud();
+  setTimeout(() => publishSyncRequest(), 1000);
+}
+
+function saveCurrentRoomData() {
+  try {
+    saveRoomJSON(STORAGE_KEY_ORDERS, orders);
+    saveRoomJSON(STORAGE_KEY_TOMBSTONES, tombstones);
+    saveRoomJSON(STORAGE_KEY_COLS, customColumns);
+    saveRoomJSON(STORAGE_KEY_COL_ORDER, columnOrder);
+    saveRoomJSON(STORAGE_KEY_DELETED_BUILTIN, deletedBuiltinKeys);
+  } catch(e) {}
+}
+
+function changeCloudRoom() {
+  const input = document.getElementById('cloudRoomInput');
+  let code = (input.value || '').trim().toUpperCase();
+  if (!code || code.length < 4) {
+    showToast('请输入至少4位房间码', 'error');
+    return;
+  }
+  if (code === cloudRoomCode) {
+    showToast('已在房间 ' + code + '，无需切换', 'info');
+    return;
+  }
+  // 1) 先断开旧房间连接，避免把当前页面数据推到旧房间
+  if (cloudClient) {
+    try { cloudClient.end(true); } catch(e) {}
+  }
+  cloudConnected = false;
+  if (cloudPollTimer) { clearInterval(cloudPollTimer); cloudPollTimer = null; }
+  // 2) 把当前房间数据保存到当前房间桶（数据分开处理，互不干扰）
+  saveCurrentRoomData();
+  saveCostTable(); // 先落盘当前房间成本，避免切换后误写入新房间
+  // 3) 切换房间码并载入新房间的本地数据（可能与当前不同）
+  cloudRoomCode = code;
+  localStorage.setItem('cloudRoomCode', code);
+  updateCloudRoomCodeInURL();
+  loadCustomColumns();
+  loadData();
+  loadCostTable(); // 重新加载新房间独立的成本表（不与其他房间混合）
+  applyRoomDisplayName(); // 立即刷新标题为当前房间显示名
+  renderOrderList();
+  updateStatsBar();
+  if (currentPageName === 'cost') renderCostTable();
+  updateCloudStatus('connecting');
+  showToast('正在加入房间 ' + code + '...', 'success');
+  // 4) 连接新房间——只有在切换成功连上后才会同步（不会把旧房间数据带过去）
+  setTimeout(() => initCloudSync(), 500);
+}
+
+// Generate a new room code (use when sync state is corrupted)
+function resetCloudRoom() {
+  customConfirm('确定要重置同步房间吗？\n\n这将生成一个新的房间码，之前房间的数据不会影响新房间。\n当前房间数据已在本机单独保存，可随时切回查看。', function(ok) {
+    if (!ok) return;
+    // 1) 断开旧连接并保存当前房间数据
+    if (cloudClient) {
+      try { cloudClient.end(true); } catch(e) {}
+    }
+    cloudConnected = false;
+    if (cloudPollTimer) { clearInterval(cloudPollTimer); cloudPollTimer = null; }
+    saveCurrentRoomData();
+    saveCostTable(); // 先落盘当前房间成本
+    // 2) 新房间：清空数据与墓碑（列结构保留），本地数据互不干扰
+    cloudRoomCode = generateRoomCode();
+    localStorage.setItem('cloudRoomCode', cloudRoomCode);
+    cloudDataTimestamp = 0;
+    localStorage.removeItem('cloudDataTimestamp');
+    orders = [];
+    tombstones = [];
+    costTable = []; // 新房间成本独立为空，不与旧房间混合
+    updateCloudRoomCodeInURL();
+    applyRoomDisplayName(); // 新房间标题即时刷新
+    // 保存新房间空数据
+    saveRoomJSON(STORAGE_KEY_ORDERS, orders);
+    saveRoomJSON(STORAGE_KEY_TOMBSTONES, tombstones);
+    saveCostTable();
+    renderOrderList();
+    updateStatsBar();
+    updateCloudStatus('connecting');
+    setTimeout(() => initCloudSync(), 500);
+    showToast('已重置同步房间：' + cloudRoomCode, 'success');
+  });
+}
+
+// ==================== 房间显示名（按房间独立，云端同步）====================
+const ROOM_NAMES_KEY = 'tire_room_names';
+const DEFAULT_APP_NAME = '轮胎订单工作台';
+
+function loadRoomNames() {
+  try { return JSON.parse(localStorage.getItem(ROOM_NAMES_KEY) || '{}'); }
+  catch (e) { return {}; }
+}
+function saveRoomNames(map) {
+  try { localStorage.setItem(ROOM_NAMES_KEY, JSON.stringify(map)); } catch (e) {}
+}
+function getRoomName(code) {
+  if (!code) return '';
+  return loadRoomNames()[code] || '';
+}
+function setRoomName(code, name) {
+  if (!code) return;
+  const map = loadRoomNames();
+  if (name && name.trim()) map[code] = name.trim();
+  else delete map[code];
+  saveRoomNames(map);
+}
+function roomDisplayName(code) {
+  return getRoomName(code) || (code || DEFAULT_APP_NAME);
+}
+function roomNameMqttTopic() {
+  return MQTT_TOPIC_PREFIX + (cloudRoomCode || 'default') + '/meta';
+}
+function applyRoomDisplayName() {
+  const code = cloudRoomCode || getCloudRoomCode();
+  const name = roomDisplayName(code);
+  try { document.title = name; } catch (e) {}
+  const h1 = document.getElementById('appTitle');
+  if (h1) h1.textContent = '🛞 ' + name;
+  const input = document.getElementById('roomNameInput');
+  if (input) input.value = getRoomName(code);
+}
+function publishRoomNameToCloud() {
+  if (!cloudConnected || !cloudClient) return;
+  const code = getCloudRoomCode();
+  const name = getRoomName(code);
+  try {
+    cloudClient.publish(roomNameMqttTopic(), JSON.stringify({
+      type: 'meta', code: code, name: name, timestamp: Date.now()
+    }), { qos: 0, retain: true });
+  } catch (e) {}
+}
+function saveRoomDisplayName() {
+  const input = document.getElementById('roomNameInput');
+  if (!input) return;
+  const code = getCloudRoomCode();
+  const val = input.value.trim();
+  setRoomName(code, val);
+  applyRoomDisplayName();
+  publishRoomNameToCloud();
+  showToast(val ? ('房间名已改为「' + val + '」并已同步') : '已恢复默认房间名', 'success');
+}
+
+function copyShareUrl() {
+  const url = location.origin + location.pathname + '#room=' + cloudRoomCode;
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(url).then(() => {
+      showToast('分享链接已复制！发给其他设备打开即可同步', 'success');
+    }).catch(() => {
+      fallbackCopyText(url);
+    });
+  } else {
+    fallbackCopyText(url);
+  }
+}
+
+function fallbackCopyText(text) {
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  ta.style.position = 'fixed';
+  ta.style.opacity = '0';
+  document.body.appendChild(ta);
+  ta.select();
+  try {
+    document.execCommand('copy');
+    showToast('分享链接已复制！发给其他设备打开即可同步', 'success');
+  } catch(e) {
+    showToast('复制失败，请手动复制：' + text, 'error');
+  }
+  document.body.removeChild(ta);
+}
+
+function generateQRCode() {
+  // Simple QR code using a public API
+  const baseUrl = customServerURL || (location.origin + location.pathname);
+  const targetUrl = baseUrl + (baseUrl.includes('#') ? '' : '#room=' + cloudRoomCode);
+  const canvas = document.getElementById('qrCanvas');
+  const urlDisplay = document.getElementById('qrUrl');
+  if (!canvas || !targetUrl) return;
+
+  urlDisplay.textContent = targetUrl;
+
+  // Use QR code library from CDN
+  const img = new Image();
+  img.crossOrigin = 'anonymous';
+  img.onload = function() {
+    const ctx = canvas.getContext('2d');
+    canvas.width = 200;
+    canvas.height = 200;
+    ctx.drawImage(img, 0, 0, 200, 200);
+  };
+  img.onerror = function() {
+    // Fallback: show URL as text
+    const ctx = canvas.getContext('2d');
+    canvas.width = 200;
+    canvas.height = 60;
+    ctx.fillStyle = '#f0f2f5';
+    ctx.fillRect(0, 0, 200, 60);
+    ctx.fillStyle = '#333';
+    ctx.font = '11px sans-serif';
+    ctx.fillText('请手动输入地址', 10, 30);
+  };
+  img.src = 'https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=' + encodeURIComponent(targetUrl);
+}
+
+// ==================== Page Switching ====================
+function switchPage(pageName) {
+  currentPageName = pageName;
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.getElementById('page-' + pageName).classList.add('active');
+  event.currentTarget.classList.add('active');
+  if (pageName === 'stats') renderStats();
+  if (pageName === 'list') renderOrderList();
+  if (pageName === 'cost') renderCostTable();
+}
+
+// ==================== Order Parser ====================
+const BRANDS = ['米其林', '普利司通', '倍耐力', '马牌', '固特异', '邓禄普', '优科豪马', '玛吉斯', '韩泰', '朝阳', '玲珑'];
+const CHINESE_NUM = { '一':1, '二':2, '两':2, '三':3, '四':4, '五':5, '六':6, '七':7, '八':8, '九':9, '十':10 };
+
+function parseChineseNumber(text) {
+  text = text.trim();
+  if (/^\d+$/.test(text)) return parseInt(text);
+  const m = text.match(/^([一二两三四五六七八九十])个?/);
+  if (m && CHINESE_NUM[m[1]]) return CHINESE_NUM[m[1]];
+  return '';
+}
+
+// 把花纹识别结果写入备注栏（避免重复写入同名花纹）
+function appendPatternToRemark(o, pat) {
+  if (!o || typeof o !== 'object') return;
+  pat = (pat == null) ? '' : String(pat).trim();
+  if (!pat) return;
+  const tag = '花纹：' + pat;
+  if (!o.remark || o.remark === '-') o.remark = tag;
+  else if (!o.remark.includes(tag)) o.remark = tag + ' ' + o.remark;
+}
+function remarkHasPattern(o) {
+  return /花纹[:：]/.test(o.remark || '');
+}
+
+// 清理已废弃的内置列：花纹折叠进备注，成交渠道/订单署名直接移除（这些列已从录入与展示中删除）
+function pruneRemovedColumns(o) {
+  if (!o || typeof o !== 'object') return;
+  if (o.pattern && o.pattern !== '-' && o.pattern !== '') appendPatternToRemark(o, o.pattern);
+  ['channel', 'signer', 'pattern'].forEach(k => { delete o[k]; });
+}
+
+function parseOrder(text, mode) {
+  const order = {};
+  COLUMNS.forEach(col => { order[col.key] = ''; });
+  order._id = genOrderId();
+  order._updatedAt = Date.now();
+  order.status = '未发货';
+  if (!text || !text.trim()) return null;
+
+  // --- 日期 (支持 8/1, 8-1, 8月1号, 8月10号 等格式) ---
+  let m = text.match(/日期[：:]\s*(\d+)[\/\-月](\d+)[号日]?/);
+  if (m) order.date = m[1] + '/' + m[2];
+
+  // --- 型号 (品牌 + 规格 合并为一列「型号」) ---
+  m = text.match(/型号[：:]\s*(.+)/);
+  let modelText = m ? m[1].trim() : '';
+
+  for (const b of BRANDS) {
+    if (modelText.includes(b)) { order.brand = b; break; }
+  }
+
+  let specText = modelText;
+  if (order.brand) specText = specText.replace(order.brand, '').trim();
+  let isRunFlat = specText.includes('防爆');
+
+  if (modelText.includes('前轮') || modelText.includes('后轮')) {
+    // 含前后轮描述：整段作为型号，保留「前轮/后轮」与品牌/规格信息
+    order.model = modelText.replace(/型号[：:]/, '').trim();
+    order.spec = '';
+  } else if (specText) {
+    let specMatch = specText.match(/(\d{3})\s*[\/..]?\s*(\d{2,3})\s*[\/..]?\s*(R?\d{2})/);
+    if (specMatch) {
+      let w = specMatch[1], p = specMatch[2], d = specMatch[3].replace('R', '');
+      order.spec = `${w}/${p}/${d}${isRunFlat ? ' 防爆' : ''}`;
+    } else {
+      order.spec = specText.replace('防爆', '').trim() || '';
+    }
+    // 型号 由函数末尾统一合并 brand + spec 生成
+  }
+
+  // --- 数量 + 旧格式金额 (数量行内含定金/代收/全款) ---
+  m = text.match(/数量[：:]\s*(.+)/);
+  let qtyText = m ? m[1].trim() : '';
+
+  let qtyMatch = qtyText.match(/^(\d+|[一二两三四五六七八九十]+)个?/);
+  if (qtyMatch) order.qty = parseChineseNumber(qtyMatch[1]);
+
+  let codMatch = qtyText.match(/代收\s*(\d+)元?/) || qtyText.match(/代收[：:]\s*(\d+)/) || qtyText.match(/到付\s*(\d+)元?/) || qtyText.match(/到付[：:]\s*(\d+)/) || qtyText.match(/到付金额\s*(\d+)/);
+  if (codMatch) order.cod = parseInt(codMatch[1]);
+
+  if (qtyText.includes('到店安装') || qtyText.includes('到店')) {
+    if (!order.remark) order.remark = '到店安装';
+    else if (!order.remark.includes('到店安装')) order.remark = '到店安装 ' + order.remark;
+    if (!order.cod) {
+      let amtMatch = qtyText.match(/到店安装(\d+)/) || qtyText.match(/到店(\d+)/);
+      if (amtMatch) order.cod = parseInt(amtMatch[1]);
+    }
+  }
+
+  // --- 新格式: 物流代收金额 / 代收金额 → cod（单价/总货款/定金不再录入，改由「成本」模块按型号派生）---
+  m = text.match(/物流代收金额[：:]?\s*(\d+)/) || text.match(/代收金额[：:]?\s*(\d+)/);
+  if (m) order.cod = parseInt(m[1]);
+
+  // --- 定金 / 全款（粘贴文本中识别，仅「格式一」生效；格式二不录入定金/全款）---
+  if (mode !== 'f2') {
+    m = text.match(/定金[：:]\s*(\d+)/) || text.match(/定金(\d+)元?/) || text.match(/已收定金[：:]\s*(\d+)/);
+    if (m) order.deposit = parseInt(m[1]);
+    m = text.match(/全款[：:]\s*(\d+)/) || text.match(/全款(\d+)元?/);
+    if (m) order.fullpay = parseInt(m[1]);
+  }
+
+  // --- 到付 → 代收（全文识别，兼容数量行以外的位置；允许空格/“到付金额”写法）---
+  m = text.match(/到付[：:]\s*(\d+)/) || text.match(/到付\s*(\d+)元?/) || text.match(/到付金额\s*(\d+)/);
+  if (m && !order.cod) order.cod = parseInt(m[1]);
+
+  // --- 花纹 (识别后写入备注栏，不再作为独立列) ---
+  m = text.match(/花纹[：:]\s*(.+)/);
+  if (m) {
+    let patternText = m[1].trim();
+    let pat = patternText.split(/[\s,，。]/)[0];
+    appendPatternToRemark(order, pat);
+    let extraPattern = patternText.replace(pat, '').trim();
+    if (extraPattern && extraPattern.length < 20) {
+      if (!order.remark || order.remark === '-') order.remark = extraPattern;
+      else if (!order.remark.includes(extraPattern)) order.remark = extraPattern + ' ' + order.remark;
+    }
+  }
+
+  // --- 备注 ---
+  m = text.match(/备注[：:]\s*(.+)/);
+  if (m) {
+    let remarkText = m[1].trim();
+    if (remarkText) {
+      if (order.remark && !order.remark.includes(remarkText)) order.remark = remarkText + ' ' + order.remark;
+      else if (!order.remark) order.remark = remarkText;
+    }
+  }
+
+  if (!remarkHasPattern(order)) {
+    let patternFromRemark = text.match(/(?:花纹|备注)[：:][^]*?((?:皓悦|皓月|PS4s?|PZ4|P7|P0|MC[0-9]|CC[0-9]|TC[0-9]|T005[A-Z]?|PSEV|3ST|CSC[0-9]|PC[0-9]|御城[^\s]*|星标|MOE)[^\s,，。]*)/i);
+    if (patternFromRemark) appendPatternToRemark(order, patternFromRemark[1]);
+  }
+
+  // --- 收货信息 (新格式, 多行) 或 地址 (旧格式) ---
+  // 先尝试匹配 收货信息，匹配后取后续多行直到下一个字段标签
+  let addrBlockMatch = text.match(/收货信息[：:]\s*(.+(?:\n(?!数量[：:]|物流代收|已收定金|单价[：:]|总货款|备注[：:]|花纹[：:]|日期[：:]|成交渠道|订单署名|型号[：:]|抖音|订单编号|订单号).+)*)/);
+  if (addrBlockMatch) {
+    let addrBlock = addrBlockMatch[1].trim();
+    let addrLines = addrBlock.split('\n').map(s => s.trim()).filter(s => s);
+
+    // 第一行通常是地址
+    let addrText = addrLines[0] || '';
+
+    // 后续行可能包含: 姓名 电话 品牌 规格 花纹 等
+    for (let li = 1; li < addrLines.length; li++) {
+      let line = addrLines[li];
+      // 提取电话
+      let phoneMatch = line.match(/1[3-9]\d{9}/);
+      if (phoneMatch && !order.phone) { order.phone = phoneMatch[0]; line = line.replace(order.phone, ' ').trim(); }
+      // 提取品牌
+      for (const b of BRANDS) {
+        if (line.includes(b) && !order.brand) { order.brand = b; line = line.replace(b, ' ').trim(); break; }
+      }
+      // 提取规格
+      if (!order.spec) {
+        let spMatch = line.match(/(\d{3})\s*[\/..]?\s*(\d{2,3})\s*[\/..]?\s*(R?\d{2})/);
+        if (spMatch) {
+          let w = spMatch[1], p = spMatch[2], d = spMatch[3].replace('R', '');
+          let rf = line.includes('防爆');
+          order.spec = `${w}/${p}/${d}${rf ? ' 防爆' : ''}`;
+          line = line.replace(spMatch[0], ' ').trim();
+        }
+      }
+      // 提取花纹 → 写入备注栏
+      if (!remarkHasPattern(order)) {
+        let patMatch = line.match(/(PZ4|PS4s?|P7|P0|MC[0-9]|CC[0-9]|TC[0-9]|T005[A-Z]?|PSEV|3ST|CSC[0-9]|PC[0-9]|皓悦\d?|皓月\d?)/i);
+        if (patMatch) { appendPatternToRemark(order, patMatch[1]); line = line.replace(patMatch[0], ' ').trim(); }
+      }
+      // 提取收件人姓名 (剩余文本开头的中文名)
+      if (!order.name) {
+        let nameMatch = line.match(/^([\u4e00-\u9fa5]{1,4})[\s\d]/);
+        if (nameMatch) { order.name = nameMatch[1]; line = line.replace(nameMatch[1], '').trim(); }
+        else {
+          let nameMatch2 = line.match(/^([\u4e00-\u9fa5]{1,4})$/);
+          if (nameMatch2) { order.name = nameMatch2[1]; line = ''; }
+        }
+      }
+      // 剩余文本放入备注
+      line = line.replace(/电车用的|电车的/g, '').trim();
+      if (line && line.length > 0 && line.length < 30) {
+        if (!order.remark || order.remark === '-') order.remark = line;
+        else if (!order.remark.includes(line)) order.remark = line + ' ' + order.remark;
+      }
+    }
+
+    // 从地址行中提取电话和姓名
+    let phoneMatch2 = addrText.match(/1[3-9]\d{9}/);
+    if (phoneMatch2 && !order.phone) { order.phone = phoneMatch2[0]; addrText = addrText.replace(order.phone, ' ').trim(); }
+
+    if (!order.name) {
+      let addrParts = addrText.split(/\s+/).filter(s => s.length > 0);
+      let nameCandidate = '';
+      for (let part of addrParts) {
+        let cleanPart = part.replace(/\[\d+\]/g, '').trim();
+        if (cleanPart.length >= 2 && cleanPart.length <= 5 && !cleanPart.match(/^(省|市|县|区|镇|村|路|号|街|道|苑|区|栋|单元|室)/)) {
+          if (!cleanPart.match(/^[\u4e00-\u9fa5]{6,}$/) && !cleanPart.match(/^\d+$/)) {
+            if (!cleanPart.match(/^(中国|北京|上海|天津|重庆|广东|广西|江苏|浙江|安徽|福建|江西|山东|河南|湖北|湖南|四川|贵州|云南|陕西|甘肃|青海|河北|山西|辽宁|吉林|黑龙江|内蒙古|新疆|西藏|宁夏|海南|香港|澳门|台湾)/)) {
+              nameCandidate = cleanPart;
+              break;
+            }
+          }
+        }
+      }
+      if (nameCandidate) {
+        order.name = nameCandidate;
+        addrText = addrText.replace(nameCandidate, ' ').replace(/\s+/g, ' ').trim();
+      }
+    }
+    order.address = addrText.replace(/\s+/g, ' ').trim();
+  } else {
+    // 旧格式: 地址：
+    m = text.match(/地址[：:]\s*(.+)/);
+    if (m) {
+      let addrText = m[1].trim();
+      let phoneMatch = addrText.match(/1[3-9]\d{9}/);
+      if (phoneMatch) { order.phone = phoneMatch[0]; addrText = addrText.replace(order.phone, ' ').trim(); }
+
+      let addrParts = addrText.split(/\s+/).filter(s => s.length > 0);
+      let nameCandidate = '';
+      for (let part of addrParts) {
+        let cleanPart = part.replace(/\[\d+\]/g, '').trim();
+        if (cleanPart.length >= 2 && cleanPart.length <= 5 && !cleanPart.match(/^(省|市|县|区|镇|村|路|号|街|道|苑|区|栋|单元|室)/)) {
+          if (!cleanPart.match(/^[\u4e00-\u9fa5]{6,}$/) && !cleanPart.match(/^\d+$/)) {
+            if (!cleanPart.match(/^(中国|北京|上海|天津|重庆|广东|广西|江苏|浙江|安徽|福建|江西|山东|河南|湖北|湖南|四川|贵州|云南|陕西|甘肃|青海|河北|山西|辽宁|吉林|黑龙江|内蒙古|新疆|西藏|宁夏|海南|香港|澳门|台湾)/)) {
+              nameCandidate = cleanPart;
+              break;
+            }
+          }
+        }
+      }
+      if (nameCandidate) {
+        order.name = nameCandidate;
+        addrText = addrText.replace(nameCandidate, ' ').replace(/\s+/g, ' ').trim();
+      }
+      let tags = addrText.match(/\[(\d+)\]/g);
+      if (tags) order.address = addrText + ' ' + tags.join(' ');
+      else order.address = addrText;
+      order.address = order.address.replace(/\s+/g, ' ').trim();
+    }
+  }
+
+  if (text.includes('拒收')) setOrderStatus(order, '拒收');
+
+  // 合并 品牌 + 规格 → 型号（统一兜底，覆盖直接解析未产出 model 的情况，如多行地址中提取）
+  if (!order.model || order.model === '-') {
+    let mb = (order.brand && order.brand !== '-' && order.brand !== '') ? order.brand : '';
+    let ms = (order.spec && order.spec !== '-' && order.spec !== '') ? order.spec : '';
+    order.model = [mb, ms].filter(Boolean).join(' ').trim() || '-';
+  }
+
+  // 从型号文本中补识别花纹（规格之后常附带，如 “245/35/20 PZ4”），写入备注栏
+  if (!remarkHasPattern(order) && modelText) {
+    const pm = modelText.match(/\b(PZ4|PS4s?|P7|P0|MC[0-9]|CC[0-9]|TC[0-9]|T005[A-Z]?|PSEV|3ST|CSC[0-9]|PC[0-9]|皓悦\d?|皓月\d?|御城[^\s]*|星标|MOE)\b/i);
+    if (pm) appendPatternToRemark(order, pm[1]);
+  }
+
+  for (let key in order) {
+    if (order[key] === '' || order[key] === null) order[key] = '-';
+  }
+  return order;
+}
+
+// ==================== Order Preview ====================
+let currentPreview = null;
+
+function setInputFormat(mode) {
+  if (mode !== 'f1' && mode !== 'f2') return;
+  inputFormatMode = mode;
+  try { localStorage.setItem('tire_input_format', mode); } catch(e) {}
+  const b1 = document.getElementById('fmtF1Btn');
+  const b2 = document.getElementById('fmtF2Btn');
+  if (b1) b1.classList.toggle('active', mode === 'f1');
+  if (b2) b2.classList.toggle('active', mode === 'f2');
+  // 已粘贴内容时，切换格式后重新解析预览（格式二会隐藏定金/全款，格式一会补录）
+  const ta = document.getElementById('orderInput');
+  if (ta && ta.value.trim().length > 10) {
+    parseAndPreview();
+  }
+}
+
+function parseAndPreview() {
+  const text = document.getElementById('orderInput').value;
+  if (!text.trim()) { showToast('请先粘贴订单信息', 'error'); return; }
+  const order = parseOrder(text, inputFormatMode);
+  if (!order) { showToast('解析失败', 'error'); return; }
+  currentPreview = order;
+  renderPreview(order, inputFormatMode);
+}
+
+// 格式二不展示「定金(元)」「全款(元)」录入项（但其余列照常）
+function isFieldHiddenInFormat(colKey, mode) {
+  if (mode === 'f2' && (colKey === 'deposit' || colKey === 'fullpay')) return true;
+  return false;
+}
+
+function renderPreview(order, mode) {
+  document.getElementById('previewSection').style.display = 'block';
+  const container = document.getElementById('previewContent');
+  let html = '<div class="preview-card">';
+  COLUMNS.forEach(col => {
+    if (col.computed) return; // 成本总货款仍按成本表派生，不手动录入
+    if (isFieldHiddenInFormat(col.key, mode)) return; // 格式二隐藏定金/全款
+    const val = order[col.key] || '-';
+    const isSelect = col.key === 'status';
+    html += `<div class="preview-field"><div class="preview-label">${col.label}</div><div class="preview-input">`;
+    if (isSelect) {
+      html += `<select id="previewStatusSelect" onchange="updatePreview('${col.key}', this.value)">`;
+      STATUS_OPTIONS.forEach(s => { html += `<option value="${s}" ${val === s ? 'selected' : ''}>${s}</option>`; });
+      html += `</select>`;
+    } else if (col.key === 'trackingNo') {
+      html += `<input id="previewTrackingInput" type="text" value="${val === '-' ? '' : val}" placeholder="输入完整单号自动转已发货" oninput="onPreviewTrackingInput()" onchange="updatePreview('${col.key}', this.value)">`;
+    } else if (col.key === 'costUnitPrice') {
+      const eff = getOrderCostUnitPrice(order);
+      const showVal = (val && val !== '-') ? val : (eff == null ? '' : eff);
+      html += `<input type="text" value="${showVal}" placeholder="留空=按型号自动取成本" onchange="updatePreview('costUnitPrice', this.value)"><div class="preview-hint">留空则按型号自动取成本，可手动覆盖</div>`;
+    } else if (col.key === 'cod') {
+      html += `<input id="previewCodInput" type="text" value="${val === '-' ? '' : val}" placeholder="拒收自动归零，可手动改" onchange="updatePreview('cod', this.value)">`;
+    } else {
+      html += `<input type="text" value="${val === '-' ? '' : val}" placeholder="-" onchange="updatePreview('${col.key}', this.value)">`;
+    }
+    html += `</div></div>`;
+  });
+  html += '</div>';
+  html += `<div class="btn-row"><button class="btn btn-success" onclick="confirmAdd()">✅ 加入表格</button></div>`;
+  container.innerHTML = html;
+  // Scroll to preview
+  document.getElementById('previewSection').scrollIntoView({ behavior: 'smooth' });
+}
+
+function updatePreview(key, value) {
+  if (!currentPreview) return;
+  if (key === 'status') {
+    setOrderStatus(currentPreview, value);
+    const codInput = document.getElementById('previewCodInput');
+    if (codInput && value === '拒收') codInput.value = '0';
+  } else {
+    currentPreview[key] = value || '-';
+  }
+}
+
+function onPreviewTrackingInput() {
+  const input = document.getElementById('previewTrackingInput');
+  if (!input || !currentPreview) return;
+  currentPreview.trackingNo = input.value.trim() || '-';
+  autoSwitchStatusOnTracking(currentPreview, 'previewStatusSelect');
+}
+
+// 防止后台切回后快速重复点击"加入表格"导致的重复录入/卡顿
+let isAddingOrder = false;
+function confirmAdd() {
+  if (isAddingOrder) return;            // 已在处理，忽略重复点击
+  if (!currentPreview) { showToast('没有可添加的数据', 'error'); return; }
+  isAddingOrder = true;
+  try {
+    orders.push({ ...currentPreview });
+    saveData();
+    // 先给出即时反馈并清空录入区（按钮随即消失，杜绝二次提交）
+    showToast('已添加到表格！', 'success');
+    clearInput();
+    // 重渲染（可能含大量卡片）放到下一帧，避免阻塞点击的视觉响应；
+    // 个别 WebView/jsdom 未实现 requestAnimationFrame 时降级为直接渲染
+    if (typeof requestAnimationFrame === 'function') {
+      requestAnimationFrame(() => { try { renderOrderList(); } catch(e) {} });
+    } else {
+      try { renderOrderList(); } catch(e) {}
+    }
+  } catch(e) {
+    console.error('confirmAdd error:', e);
+    showToast('添加失败，请重试', 'error');
+  } finally {
+    setTimeout(() => { isAddingOrder = false; }, 400);
+  }
+}
+
+function clearInput() {
+  document.getElementById('orderInput').value = '';
+  document.getElementById('previewSection').style.display = 'none';
+  document.getElementById('previewContent').innerHTML = '';
+  currentPreview = null;
+}
+
+// ==================== Tracking Parser & Matcher ====================
+function parseTracking() {
+  const text = document.getElementById('trackingInput').value;
+  if (!text.trim()) { showToast('请先粘贴快递单信息', 'error'); return; }
+  if (orders.length === 0) { showToast('表格中没有订单可匹配', 'error'); return; }
+
+  const entries = text.split(/\n\s*\n/).filter(s => s.trim());
+  const results = [];
+  if (entries.length > 1) {
+    entries.forEach(entry => { const r = matchTrackingToOrder(entry); if (r) results.push(r); });
+  } else {
+    const r = matchTrackingToOrder(text);
+    if (r) results.push(r);
+  }
+  renderTrackingResults(results);
+}
+
+function matchTrackingToOrder(text) {
+  let trackingNo = '';
+  let allNums = text.match(/\d{10,20}/g);
+  if (allNums) {
+    for (let n of allNums) {
+      if (!/^1[3-9]\d{9}$/.test(n)) { trackingNo = n; break; }
+    }
+  }
+  let m = text.match(/(?:快递单号|物流单号|运单号|单号)[：:]\s*(\d{8,20})/);
+  if (m) trackingNo = m[1];
+
+  let phoneMatch = text.match(/1[3-9]\d{9}/);
+  let phone = phoneMatch ? phoneMatch[0] : '';
+
+  let bestMatch = null;
+  let bestScore = 0;
+
+  for (let i = 0; i < orders.length; i++) {
+    let order = orders[i];
+    let score = 0;
+    let reasons = [];
+
+    if (phone && order.phone && String(order.phone).includes(phone)) {
+      score += 100; reasons.push('电话匹配');
+    }
+    if (order.name && order.name !== '-') {
+      let name = String(order.name).replace(/[^a-zA-Z0-9\u4e00-\u9fa5]/g, '');
+      if (name.length >= 2 && text.includes(name)) { score += 50; reasons.push('收件人匹配'); }
+    }
+    if (order.address && order.address !== '-') {
+      let addr = String(order.address);
+      let provMatch = addr.match(/([\u4e00-\u9fa5]{2,3})(?:省|自治区)/);
+      if (provMatch && text.includes(provMatch[1])) { score += 15; reasons.push('省份匹配'); }
+      let cityMatch = addr.match(/(?:省|自治区)([\u4e00-\u9fa5]{2,4})市/);
+      if (cityMatch && text.includes(cityMatch[1])) { score += 20; reasons.push('城市匹配'); }
+      else {
+        let muniMatch = addr.match(/^(北京|上海|天津|重庆)/);
+        if (muniMatch && text.includes(muniMatch[1])) { score += 15; reasons.push('城市匹配'); }
+      }
+      let distMatch = addr.match(/([\u4e00-\u9fa5]{2,4})(?:区|县|市)/);
+      if (distMatch && distMatch[1] && text.includes(distMatch[1])) { score += 15; reasons.push('区县匹配'); }
+      let keywords = addr.match(/[\u4e00-\u9fa5]{3,}/g);
+      if (keywords) {
+        for (let kw of keywords) {
+          if (kw.length >= 3 && text.includes(kw)) { score += 10; reasons.push('地址关键词: ' + kw); break; }
+        }
+      }
+    }
+    if (score > bestScore) { bestScore = score; bestMatch = { index: i, order, score, reasons }; }
+  }
+  return { trackingNo, phone, bestMatch };
+}
+
+function renderTrackingResults(results) {
+  document.getElementById('trackingPreviewSection').style.display = 'block';
+  const container = document.getElementById('trackingPreviewContent');
+  if (results.length === 0) {
+    container.innerHTML = '<div class="empty-state"><div class="icon">📦</div><p>未找到有效的快递单信息</p></div>';
+    return;
+  }
+
+  let html = '';
+  results.forEach((r) => {
+    if (!r.trackingNo) {
+      html += `<div class="match-card"><div style="color:var(--danger);">⚠️ 未识别到物流单号</div></div>`;
+      return;
+    }
+
+    let confidence = '低';
+    let confClass = 'match-low';
+    if (r.bestMatch) {
+      if (r.bestMatch.score >= 50) { confidence = '高'; confClass = 'match-high'; }
+      else if (r.bestMatch.score >= 20) { confidence = '中'; confClass = 'match-medium'; }
+    }
+
+    html += `<div class="match-card">`;
+    html += `<div class="match-tracking">📦 ${r.trackingNo} <span class="match-confidence ${confClass}">${confidence}</span></div>`;
+
+    if (r.bestMatch && r.bestMatch.score > 0) {
+      let o = r.bestMatch.order;
+      let i = r.bestMatch.index;
+      html += `<div class="match-order-info">`;
+      html += `<span class="label">匹配订单:</span> #${i + 1} ${o.model || ''}<br>`;
+      if (o.name && o.name !== '-') html += `<span class="label">收件人:</span> ${o.name} `;
+      if (o.phone && o.phone !== '-') html += `${o.phone}`;
+      html += `<br><span class="label">地址:</span> ${o.address || '-'}<br>`;
+      html += `<span class="label">依据:</span> ${r.bestMatch.reasons.join('、')}`;
+      html += `</div>`;
+      html += `<div class="match-actions">`;
+      html += `<button class="btn btn-success btn-block btn-sm" onclick="confirmTracking(${i}, '${r.trackingNo}')">✅ 确认填入此订单</button>`;
+      html += `<select class="match-select" onchange="if(this.value!=='') confirmTracking(parseInt(this.value), '${r.trackingNo}')"><option value="">或手动选择其他订单...</option>`;
+      orders.forEach((ord, oi) => {
+        html += `<option value="${oi}">#${oi+1} ${ord.model||''} ${ord.name||''}</option>`;
+      });
+      html += `</select>`;
+      html += `</div>`;
+    } else {
+      html += `<div class="match-order-info" style="color:#856404;">⚠️ 未找到匹配订单，请手动选择</div>`;
+      html += `<div class="match-actions">`;
+      html += `<select class="match-select" onchange="if(this.value!=='') confirmTracking(parseInt(this.value), '${r.trackingNo}')"><option value="">选择订单...</option>`;
+      orders.forEach((ord, oi) => {
+        html += `<option value="${oi}">#${oi+1} ${ord.model||''} ${ord.name||''} ${ord.phone||''}</option>`;
+      });
+      html += `</select>`;
+      html += `</div>`;
+    }
+    html += `</div>`;
+  });
+
+  container.innerHTML = html;
+  document.getElementById('trackingPreviewSection').scrollIntoView({ behavior: 'smooth' });
+}
+
+function confirmTracking(orderIdx, trackingNo) {
+  if (orders[orderIdx]) {
+    orders[orderIdx].trackingNo = trackingNo;
+    orders[orderIdx]._updatedAt = Date.now();
+    if (orders[orderIdx].status === '签收' || orders[orderIdx].status === '未发货' || orders[orderIdx].status === '-') {
+      orders[orderIdx].status = '已发货';
+    }
+    saveData();
+    renderOrderList();
+    showToast(`物流单号已填入订单 #${orderIdx + 1}`, 'success');
+  }
+}
+
+function clearTrackingInput() {
+  document.getElementById('trackingInput').value = '';
+  document.getElementById('trackingPreviewSection').style.display = 'none';
+  document.getElementById('trackingPreviewContent').innerHTML = '';
+}
+
+// ==================== Order List (Card View) ====================
+function renderOrderList() {
+  const container = document.getElementById('orderListContainer');
+  const searchEl = document.getElementById('searchInput');
+  const search = searchEl ? searchEl.value.toLowerCase().trim() : '';
+
+  let filtered = (orders || []).filter(o => o && typeof o === 'object');
+  if (search) {
+    filtered = filtered.filter(o => Object.values(o).some(v => String(v).toLowerCase().includes(search)));
+  }
+  // 状态筛选：仅保留所选状态的订单（为空表示全部）
+  if (statusFilter.length) {
+    filtered = filtered.filter(o => statusFilter.includes(o.status || '未发货'));
+  }
+
+  // Apply active sort (default: time desc → 由近到远)
+  filtered = sortOrders(filtered);
+
+  if (filtered.length === 0) {
+    const noMatch = (search || statusFilter.length) ? '没有匹配的订单' : '暂无订单数据<br>从「录入」页面粘贴订单信息开始';
+    container.innerHTML = `<div class="empty-state"><div class="icon">📋</div><p>${noMatch}</p></div>`;
+    updateStatsBar(search ? filtered.length : null);
+    return;
+  }
+
+  let html = '';
+  filtered.forEach((order) => {
+    const realIdx = orders.indexOf(order);
+    const status = order.status || '未发货';
+    const amount = getOrderAmount(order);
+    // 作废订单默认折叠（但仍可点击展开）；用户手动展开过的作废卡保持展开
+    const isVoid = (status === '作废');
+    const autoCol = (isVoid && !(order._id && expandedVoidIds.has(order._id))) ? ' collapsed' : '';
+    html += `<div class="order-card status-${status}${autoCol}" data-oid="${order._id || ''}" onclick="toggleCard(event, this)" style="cursor:pointer;">`;
+    html += `<div class="order-card-header">`;
+    html += `<div>`;
+    html += `<span class="order-card-title">${order.model || '-'}</span>`;
+    html += ` <span class="order-card-no">#${realIdx + 1}</span>`;
+    html += `</div>`;
+    html += `<span class="expand-icon">▼</span>`;
+    html += `</div>`;
+    
+    // 卡片正文：型号作为标题已在头部展示，状态作为底部徽章；正文按用户指定优先级布局
+    // 成本单价 / 成本总货款：优先订单手动填写，否则成本表按型号派生（成本单价 × 数量）
+    const costPrice = getOrderCostUnitPrice(order);
+    const costQty = parseInt(order.qty);
+    const costTotalVal = (costPrice != null && !isNaN(costQty)) ? (costPrice * costQty) : null;
+    html += `<div class="order-card-body">`;
+    const PRIORITY_BODY = ['date', 'name', 'phone', 'address', 'trackingNo', 'costUnitPrice', 'qty', 'costTotal', 'shipping', 'cod', 'deposit', 'fullpay', 'aftersale'];
+    const FULL_WIDTH = new Set(['address', 'trackingNo', 'remark']);
+    const MONEY_KEYS = new Set(['costUnitPrice', 'costTotal', 'shipping', 'cod', 'deposit', 'fullpay']);
+    const labelOf = (key) => { const c = COLUMNS.find(x => x.key === key); return c ? c.label : key; };
+    const addField = (key, value, labelOverride) => {
+      if (value === null || value === undefined || value === '' || value === '-') return;
+      const label = labelOverride || labelOf(key);
+      const fw = FULL_WIDTH.has(key) ? ' style="width:100%;"' : '';
+      const money = MONEY_KEYS.has(key) ? ' money' : '';
+      html += `<div class="field"${fw}><span class="field-label">${label}：</span><span class="field-value${money}">${value}</span></div>`;
+    };
+    // 1) 优先字段（日期→收件人→联系方式→收件地址→物流单号→成本单价→数量→成本总货款→代收）
+    PRIORITY_BODY.forEach(key => {
+      let value = order[key];
+      if (key === 'costUnitPrice') value = (costPrice == null) ? '-' : costPrice;
+      if (key === 'costTotal') value = (costTotalVal == null) ? '-' : costTotalVal;
+      addField(key, value);
+    });
+    // 2) 其余内置列（型号在标题、状态在底部，跳过）
+    COLUMNS.forEach(col => {
+      if (PRIORITY_BODY.indexOf(col.key) >= 0 || col.key === 'model' || col.key === 'status') return;
+      addField(col.key, order[col.key], col.label);
+    });
+    // 3) 自定义列
+    customColumns.forEach(col => addField(col.key, order[col.key], col.label));
+    html += `</div>`;
+    
+    // Footer with status and actions
+    html += `<div class="order-card-footer">`;
+    html += `<select class="status-badge badge-${status}" onchange="updateCell(${realIdx}, 'status', this.value); renderOrderList()" style="border:none; appearance:none; -webkit-appearance:none; padding:4px 12px; border-radius:20px; font-size:12px; font-weight:600; cursor:pointer;">`;
+    STATUS_OPTIONS.forEach(s => { html += `<option value="${s}" ${status===s?'selected':''}>${s}</option>`; });
+    html += `</select>`;
+    html += `<div class="card-actions">`;
+    html += `<button class="card-action-btn edit" onclick="openEditSheet(${realIdx})" title="编辑">✏️</button>`;
+    html += `<button class="card-action-btn delete" onclick="deleteRow(${realIdx})" title="删除">🗑️</button>`;
+    html += `</div>`;
+    html += `</div>`;
+    html += `</div>`;
+  });
+
+  container.innerHTML = html;
+  updateStatsBar(search ? filtered.length : null);
+}
+
+function toggleCard(e, el) {
+  if (e && e.target) {
+    var tag = e.target.tagName;
+    if (tag === 'BUTTON' || tag === 'SELECT' || tag === 'OPTION' || tag === 'INPUT' || e.target.closest('button') || e.target.closest('select')) {
+      return;
+    }
+  }
+  // 记录用户手动展开/收起的作废卡，避免重渲染时被强制重置
+  var oid = el.getAttribute('data-oid');
+  var willCollapse = el.classList.contains('collapsed'); // 当前已是折叠态 → 点击后变为展开
+  el.classList.toggle('collapsed');
+  if (oid) {
+    if (willCollapse) expandedVoidIds.add(oid); // 手动展开
+    else expandedVoidIds.delete(oid); // 手动收起
+  }
+}
+
+// 设置订单状态；当状态切换为「拒收」时，代收金额自动归零（仍可手动修改）
+function setOrderStatus(order, status) {
+  if (!order) return;
+  order.status = status || '-';
+  if (order.status === '拒收') {
+    order.cod = 0;
+  }
+}
+
+function updateCell(rowIdx, key, value) {
+  if (orders[rowIdx]) {
+    if (key === 'status') {
+      setOrderStatus(orders[rowIdx], value);
+    } else {
+      orders[rowIdx][key] = value || '-';
+    }
+    orders[rowIdx]._updatedAt = Date.now();
+    // Auto-change status to '已发货' when tracking number is entered
+    if (key === 'trackingNo' && value && value !== '-' && value !== '') {
+      if (orders[rowIdx].status === '未发货' || orders[rowIdx].status === '签收' || orders[rowIdx].status === '-') {
+        orders[rowIdx].status = '已发货';
+      }
+    }
+    saveData();
+  }
+}
+
+// 判断是否为"完整"的物流单号：去空格/横线后，≥8位字母或数字
+function isCompleteTrackingNo(v) {
+  if (v === null || v === undefined) return false;
+  const s = String(v).trim().replace(/[\s-]/g, '');
+  return /^[A-Za-z0-9]{8,}$/.test(s);
+}
+
+// 录入/编辑时，物流单号栏输入完整单号 → 状态自动跳转为"已发货"
+function autoSwitchStatusOnTracking(target, statusSelectId) {
+  if (!isCompleteTrackingNo(target.trackingNo)) return;
+  const cur = target.status;
+  // 仅在未发货/未设置时自动跳转，保留拒收/作废等终态不被覆盖
+  if (cur === '未发货' || cur === '-' || cur === undefined || cur === null) {
+    target.status = '已发货';
+    const sel = document.getElementById(statusSelectId);
+    if (sel) sel.value = '已发货';
+  }
+}
+
+function deleteRow(rowIdx) {
+  customConfirm('确定删除这条订单吗？', function(ok) {
+    if (ok) {
+      const order = orders[rowIdx];
+      if (order && order._id) {
+        // Add to tombstones so deletion syncs to other devices
+        tombstones.push({ id: order._id, deletedAt: Date.now() });
+        if (tombstones.length > 200) {
+          tombstones.sort((a, b) => b.deletedAt - a.deletedAt);
+          tombstones = tombstones.slice(0, 200);
+        }
+      }
+      orders.splice(rowIdx, 1);
+      saveData();
+      renderOrderList();
+      showToast('已删除', 'success');
+    }
+  });
+}
+
+function addEmptyRow() {
+  const empty = {};
+  COLUMNS.forEach(col => { empty[col.key] = col.key === 'status' ? '未发货' : '-'; });
+  empty._id = genOrderId();
+  empty._updatedAt = Date.now();
+  orders.push(empty);
+  saveData();
+  renderOrderList();
+  showToast('已添加空行，点击✏️编辑', 'success');
+}
+
+function updateStatsBar(filteredCount) {
+  const el = document.getElementById('statsBar');
+  if (!el) return;
+  if (filteredCount !== null && filteredCount !== undefined) {
+    el.textContent = `匹配 ${filteredCount} / 共 ${orders.length} 条`;
+  } else {
+    el.textContent = `共 ${orders.length} 条订单`;
+  }
+}
+
+function clearSearch() {
+  const si = document.getElementById('searchInput');
+  if (si) si.value = '';
+  const cb = document.getElementById('searchClearBtn');
+  if (cb) cb.style.display = 'none';
+  renderOrderList();
+  if (si) si.focus();
+}
+
+// ==================== Edit Sheet ====================
+function openEditSheet(idx) {
+  editingIdx = idx;
+  const order = orders[idx];
+  if (!order) return;
+  
+  document.getElementById('editSheetTitle').textContent = `编辑订单 #${idx + 1}`;
+  const container = document.getElementById('editFields');
+  let html = '';
+  COLUMNS.forEach(col => {
+    if (col.computed) return; // 成本总货款仍按成本表派生，不手动录入
+    const val = order[col.key] || '-';
+    const isSelect = col.key === 'status';
+    const isTracking = col.key === 'trackingNo';
+    html += `<div class="sheet-field"><label>${col.label}</label>`;
+    if (isSelect) {
+      html += `<select id="editStatusSelect" onchange="onEditStatusChange(${idx}, this.value)">`;
+      STATUS_OPTIONS.forEach(s => { html += `<option value="${s}" ${val === s ? 'selected' : ''}>${s}</option>`; });
+      html += `</select>`;
+    } else if (isTracking) {
+      html += `<input id="editTrackingInput" type="text" value="${val === '-' ? '' : val}" placeholder="输入完整单号自动转已发货" oninput="onEditTrackingInput(${idx})" onchange="orders[${idx}]['${col.key}'] = this.value || '-'; saveData()">`;
+    } else if (col.key === 'costUnitPrice') {
+      const eff = getOrderCostUnitPrice(order);
+      const showVal = (val && val !== '-') ? val : (eff == null ? '' : eff);
+      html += `<input type="text" value="${showVal}" placeholder="留空=按型号自动取成本" onchange="orders[${idx}]['costUnitPrice'] = this.value || '-'; saveData()"><div class="sheet-hint">留空则按型号自动取成本，可手动覆盖</div>`;
+    } else if (col.key === 'cod') {
+      html += `<input id="editCodInput" type="text" value="${val === '-' ? '' : val}" placeholder="拒收自动归零，可手动改" onchange="orders[${idx}]['cod'] = this.value || '-'; saveData()">`;
+    } else {
+      html += `<input type="text" value="${val === '-' ? '' : val}" placeholder="-" onchange="orders[${idx}]['${col.key}'] = this.value || '-'; saveData()">`;
+    }
+    html += `</div>`;
+  });
+  container.innerHTML = html;
+  document.getElementById('editSheetOverlay').classList.add('show');
+}
+
+function onEditTrackingInput(idx) {
+  const input = document.getElementById('editTrackingInput');
+  if (!input || !orders[idx]) return;
+  orders[idx].trackingNo = input.value.trim() || '-';
+  autoSwitchStatusOnTracking(orders[idx], 'editStatusSelect');
+  orders[idx]._updatedAt = Date.now();
+  saveData();
+}
+
+// 编辑弹窗切换状态：拒收时代收自动归零并更新输入框，仍可在保存前手动修改
+function onEditStatusChange(idx, value) {
+  if (!orders[idx]) return;
+  setOrderStatus(orders[idx], value);
+  const codInput = document.getElementById('editCodInput');
+  if (codInput && value === '拒收') codInput.value = '0';
+  saveData();
+}
+
+function closeEditSheet() {
+  document.getElementById('editSheetOverlay').classList.remove('show');
+  editingIdx = -1;
+  renderOrderList();
+}
+
+function saveEditOrder() {
+  // Update timestamp so sync knows this order was modified
+  if (orders[editingIdx]) {
+    orders[editingIdx]._updatedAt = Date.now();
+  }
+  saveData();
+  closeEditSheet();
+  showToast('已保存', 'success');
+}
+
+// ==================== Column Management ====================
+function addCustomColumn() {
+  const name = prompt('请输入新列名称：');
+  if (!name || !name.trim()) return;
+  addCustomColumnWithName(name.trim());
+}
+
+function addCustomColumnFromPanel() {
+  const input = document.getElementById('newColName');
+  const name = input.value.trim();
+  if (!name) { showToast('请输入列名称', 'error'); return; }
+  input.value = '';
+  addCustomColumnWithName(name);
+  renderColPanel();
+}
+
+function addCustomColumnWithName(name) {
+  const key = 'custom_' + Date.now();
+  const newCol = { key, label: name, width: 100, custom: true };
+  customColumns.push(newCol);
+  rebuildColumns();
+  saveCustomColumns();
+  orders.forEach(o => { if (!(key in o)) o[key] = '-'; });
+  saveData();
+  renderOrderList();
+  showToast('已添加列：' + name, 'success');
+}
+
+function removeColumn(key) {
+  const col = BUILTIN_COLUMNS.find(c => c.key === key);
+  const colLabel = (COLUMNS.find(c => c.key === key) || {}).label || key;
+  if (col) {
+    // Builtin column - mark as deleted (can be restored)
+    customConfirm('确定删除列「' + colLabel + '」吗？该列数据仍保留，可随时恢复。', function(ok) {
+      if (!ok) return;
+      if (!deletedBuiltinKeys.includes(key)) deletedBuiltinKeys.push(key);
+      saveDeletedBuiltinKeys();
+      rebuildColumns();
+      renderOrderList();
+      renderColPanel();
+      showToast('已删除列：' + colLabel, 'success');
+    });
+  } else {
+    // Custom column - permanently delete
+    customConfirm('确定删除自定义列「' + colLabel + '」吗？该列数据将丢失！', function(ok) {
+      if (!ok) return;
+      const cIdx = customColumns.findIndex(c => c.key === key);
+      if (cIdx >= 0) customColumns.splice(cIdx, 1);
+      saveCustomColumns();
+      orders.forEach(o => { delete o[key]; });
+      saveData();
+      rebuildColumns();
+      renderOrderList();
+      renderColPanel();
+      showToast('已删除列：' + colLabel, 'success');
+    });
+  }
+}
+
+function restoreColumn(key) {
+  const idx = deletedBuiltinKeys.indexOf(key);
+  if (idx >= 0) {
+    deletedBuiltinKeys.splice(idx, 1);
+    saveDeletedBuiltinKeys();
+    rebuildColumns();
+    // Ensure orders have this field
+    orders.forEach(o => { if (!(key in o)) o[key] = '-'; });
+    saveData();
+    renderOrderList();
+    renderColPanel();
+    const col = BUILTIN_COLUMNS.find(c => c.key === key);
+    showToast('已恢复列：' + (col ? col.label : key), 'success');
+  }
+}
+
+function restoreAllColumns() {
+  if (deletedBuiltinKeys.length === 0) { showToast('没有已删除的列', 'info'); return; }
+  deletedBuiltinKeys.forEach(key => {
+    orders.forEach(o => { if (!(key in o)) o[key] = '-'; });
+  });
+  deletedBuiltinKeys = [];
+  saveDeletedBuiltinKeys();
+  rebuildColumns();
+  saveData();
+  renderOrderList();
+  renderColPanel();
+  showToast('已恢复全部默认列', 'success');
+}
+
+function showColPanel() {
+  document.getElementById('colPanel').classList.add('show');
+  renderColPanel();
+}
+
+function hideColPanel() {
+  document.getElementById('colPanel').classList.remove('show');
+}
+
+function renderColPanel() {
+  // Current columns
+  const listEl = document.getElementById('colList');
+  let html = '';
+  COLUMNS.forEach((col, idx) => {
+    const isBuiltin = BUILTIN_COLUMNS.some(c => c.key === col.key);
+    html += `<div class="col-item" data-key="${col.key}" data-idx="${idx}">`;
+    html += `<div class="col-drag-handle" data-key="${col.key}">⠿</div>`;
+    html += `<div style="flex:1;"><span class="col-name">${col.label}</span><span class="col-type">${isBuiltin ? '内置' : '自定义'}</span></div>`;
+    html += `<div class="col-actions"><button class="col-del-btn" onclick="removeColumn('${col.key}')">🗑️ 删除</button></div>`;
+    html += `</div>`;
+  });
+  listEl.innerHTML = html;
+  initColDrag();
+
+  // Deleted builtin columns
+  const deletedEl = document.getElementById('colDeletedList');
+  const deletedSection = document.getElementById('colDeletedSection');
+  if (deletedBuiltinKeys.length > 0) {
+    deletedSection.style.display = 'block';
+    let dhtml = '';
+    deletedBuiltinKeys.forEach(key => {
+      const col = BUILTIN_COLUMNS.find(c => c.key === key);
+      if (col) {
+        dhtml += `<div class="col-item">`;
+        dhtml += `<div><span class="col-name">${col.label}</span><span class="col-type">已删除</span></div>`;
+        dhtml += `<div class="col-actions"><button class="col-restore-btn" onclick="restoreColumn('${key}')">↩️ 恢复</button></div>`;
+        dhtml += `</div>`;
+      }
+    });
+    deletedEl.innerHTML = dhtml;
+  } else {
+    deletedSection.style.display = 'none';
+  }
+}
+
+// ==================== Column Drag Reorder ====================
+var _colDragState = {
+  dragging: false,
+  dragKey: null,
+  dragEl: null,
+  longPressTimer: null,
+  startY: 0,
+  moved: false
+};
+
+function initColDrag() {
+  var listEl = document.getElementById('colList');
+  var handles = listEl.querySelectorAll('.col-drag-handle');
+  handles.forEach(function(handle) {
+    // Touch events (mobile)
+    handle.addEventListener('touchstart', onColDragTouchStart, { passive: false });
+    handle.addEventListener('touchmove', onColDragTouchMove, { passive: false });
+    handle.addEventListener('touchend', onColDragTouchEnd);
+    handle.addEventListener('touchcancel', onColDragTouchEnd);
+    // Mouse events (desktop)
+    handle.addEventListener('mousedown', onColDragMouseDown);
+  });
+}
+
+function onColDragTouchStart(e) {
+  if (e.touches.length !== 1) return;
+  var touch = e.touches[0];
+  var handle = e.currentTarget;
+  var colItem = handle.closest('.col-item');
+  if (!colItem) return;
+  _colDragState.dragKey = handle.dataset.key;
+  _colDragState.dragEl = colItem;
+  _colDragState.startY = touch.clientY;
+  _colDragState.moved = false;
+  // Long press timer
+  _colDragState.longPressTimer = setTimeout(function() {
+    _colDragState.dragging = true;
+    colItem.classList.add('dragging');
+    if (navigator.vibrate) navigator.vibrate(30);
+  }, 400);
+}
+
+function onColDragTouchMove(e) {
+  if (!_colDragState.dragKey) return;
+  var touch = e.touches[0];
+  var dy = Math.abs(touch.clientY - _colDragState.startY);
+  if (dy > 5) {
+    _colDragState.moved = true;
+    clearTimeout(_colDragState.longPressTimer);
+  }
+  if (!_colDragState.dragging) return;
+  e.preventDefault();
+  updateColDragHover(touch.clientY);
+}
+
+function onColDragTouchEnd(e) {
+  clearTimeout(_colDragState.longPressTimer);
+  if (_colDragState.dragging) {
+    finishColDrag();
+  }
+  _colDragState.dragging = false;
+  _colDragState.dragKey = null;
+  _colDragState.dragEl = null;
+  _colDragState.moved = false;
+}
+
+function onColDragMouseDown(e) {
+  e.preventDefault();
+  var handle = e.currentTarget;
+  var colItem = handle.closest('.col-item');
+  if (!colItem) return;
+  _colDragState.dragKey = handle.dataset.key;
+  _colDragState.dragEl = colItem;
+  _colDragState.dragging = true;
+  _colDragState.moved = true;
+  colItem.classList.add('dragging');
+
+  function onMouseMove(ev) {
+    updateColDragHover(ev.clientY);
+  }
+  function onMouseUp(ev) {
+    finishColDrag();
+    _colDragState.dragging = false;
+    _colDragState.dragKey = null;
+    _colDragState.dragEl = null;
+    document.removeEventListener('mousemove', onMouseMove);
+    document.removeEventListener('mouseup', onMouseUp);
+  }
+  document.addEventListener('mousemove', onMouseMove);
+  document.addEventListener('mouseup', onMouseUp);
+}
+
+function updateColDragHover(clientY) {
+  var listEl = document.getElementById('colList');
+  var items = listEl.querySelectorAll('.col-item');
+  var hoverIdx = -1;
+  items.forEach(function(item, idx) {
+    item.classList.remove('drag-over-top', 'drag-over-bottom');
+    var rect = item.getBoundingClientRect();
+    if (clientY >= rect.top && clientY <= rect.bottom) {
+      var midY = rect.top + rect.height / 2;
+      if (clientY < midY) {
+        item.classList.add('drag-over-top');
+        hoverIdx = idx;
+      } else {
+        item.classList.add('drag-over-bottom');
+        hoverIdx = idx + 1;
+      }
+    }
+  });
+  _colDragState._hoverIdx = hoverIdx;
+}
+
+function finishColDrag() {
+  var listEl = document.getElementById('colList');
+  var items = listEl.querySelectorAll('.col-item');
+  items.forEach(function(item) {
+    item.classList.remove('dragging', 'drag-over-top', 'drag-over-bottom');
+  });
+
+  var dragKey = _colDragState.dragKey;
+  var hoverIdx = _colDragState._hoverIdx;
+  if (dragKey === null || hoverIdx === undefined || hoverIdx < 0) return;
+
+  // Build new key list from current DOM order
+  var keyList = [];
+  items.forEach(function(item) {
+    var k = item.dataset.key;
+    if (k !== dragKey) keyList.push(k);
+  });
+  // Insert dragged key at hoverIdx
+  var insertIdx = Math.min(hoverIdx, keyList.length);
+  keyList.splice(insertIdx, 0, dragKey);
+
+  // Rebuild COLUMNS based on new key order
+  var colMap = {};
+  COLUMNS.forEach(function(c) { colMap[c.key] = c; });
+  var newCols = [];
+  keyList.forEach(function(k) {
+    if (colMap[k]) newCols.push(colMap[k]);
+  });
+  // Append any columns not in keyList (shouldn't happen, but safety)
+  COLUMNS.forEach(function(c) {
+    if (!keyList.includes(c.key)) newCols.push(c);
+  });
+  COLUMNS = newCols;
+  saveColumnOrder();
+  renderOrderList();
+  renderColPanel();
+  showToast('列顺序已更新', 'success');
+}
+
+// ==================== Statistics ====================
+function getOrderAmount(order) {
+  // 订单金额统计：代收 + 定金 + 全款
+  let total = 0;
+  ['cod', 'deposit', 'fullpay'].forEach(key => {
+    let val = order[key];
+    if (val !== undefined && val !== null && val !== '-' && val !== '') {
+      let num = parseInt(String(val).replace(/[^\d]/g, ''));
+      if (!isNaN(num)) total += num;
+    }
+  });
+  return total;
+}
+
+function getOrderDate(dateStr) {
+  if (!dateStr || dateStr === '-') return null;
+  let m = String(dateStr).match(/(\d{1,2})[\/\-](\d{1,2})/);
+  if (m) return { month: parseInt(m[1]), day: parseInt(m[2]) };
+  return null;
+}
+
+// 将 'YYYY-MM-DD' 解析为本地午夜（避免 new Date('YYYY-MM-DD') 按 UTC 解析导致的时区偏差）
+function parseYMD(s) {
+  const p = String(s).split('-');
+  return new Date(+p[0], (+p[1]) - 1, +p[2]);
+}
+// 判断订单日期是否落在 [startStr, endStr] 范围内（订单日期只有 月/日，按起始日期所在年对齐；支持跨年范围）
+function orderDateInRange(dateStr, startStr, endStr) {
+  const md = getOrderDate(dateStr);
+  if (!md) return false;
+  const start = parseYMD(startStr);
+  const end = parseYMD(endStr);
+  const refYear = start.getFullYear();
+  const od = new Date(refYear, md.month - 1, md.day);
+  if (start > end) {
+    // 跨年（如 2025-12-01 ~ 2026-02-28）：同月日落在次年的也计入
+    const odNext = new Date(refYear + 1, md.month - 1, md.day);
+    const endNext = new Date(end.getFullYear() + 1, end.getMonth(), end.getDate());
+    return (od >= start && od <= end) || (odNext >= start && odNext <= endNext);
+  }
+  return od >= start && od <= end;
+}
+
+// 用户修改时间段输入框：取消已生效的统计范围，状态统计恢复为全部
+function onStatDateChange() {
+  currentStatRange = null;
+  renderStats();
+}
+
+function isToday(dateStr) {
+  const now = new Date();
+  const d = getOrderDate(dateStr);
+  return d && d.month === (now.getMonth() + 1) && d.day === now.getDate();
+}
+
+function isThisMonth(dateStr) {
+  const now = new Date();
+  const d = getOrderDate(dateStr);
+  return d && d.month === (now.getMonth() + 1);
+}
+
+function formatAmount(num) {
+  return '¥' + num.toLocaleString('zh-CN');
+}
+
+function renderStats() {
+  const now = new Date();
+  const todayOrders = orders.filter(o => isToday(o.date));
+  const monthOrders = orders.filter(o => isThisMonth(o.date));
+  const todayAmount = todayOrders.reduce((sum, o) => sum + getOrderAmount(o), 0);
+  const monthAmount = monthOrders.reduce((sum, o) => sum + getOrderAmount(o), 0);
+
+  document.getElementById('todayLabel').textContent = `今日 (${now.getMonth()+1}/${now.getDate()})`;
+  document.getElementById('monthLabel').textContent = `${now.getFullYear()}年${now.getMonth()+1}月`;
+  document.getElementById('todayCount').innerHTML = `${todayOrders.length}<span class="stat-unit"> 条</span>`;
+  document.getElementById('todayAmount').textContent = formatAmount(todayAmount);
+  document.getElementById('monthCount').innerHTML = `${monthOrders.length}<span class="stat-unit"> 条</span>`;
+  document.getElementById('monthAmount').textContent = formatAmount(monthAmount);
+
+  // Status breakdown —— 若设置了自定义时间段，则仅统计该时间段内的订单
+  const scopeOrders = currentStatRange
+    ? orders.filter(o => orderDateInRange(o.date, currentStatRange.start, currentStatRange.end))
+    : orders;
+  let statusCounts = {};
+  STATUS_OPTIONS.forEach(s => { statusCounts[s] = { count: 0, amount: 0 }; });
+  scopeOrders.forEach(o => {
+    let s = o.status || '未发货';
+    if (!statusCounts[s]) statusCounts[s] = { count: 0, amount: 0 };
+    statusCounts[s].count++;
+    statusCounts[s].amount += getOrderAmount(o);
+  });
+
+  let breakdownHtml = '';
+  let anyStatus = false;
+  for (let s of STATUS_OPTIONS) {
+    if (statusCounts[s] && statusCounts[s].count > 0) {
+      anyStatus = true;
+      breakdownHtml += `<div class="status-tag tag-${s}">
+        <span>${s}</span>
+        <span class="count">${statusCounts[s].count}</span>
+        <span class="amt">${formatAmount(statusCounts[s].amount)}</span>
+      </div>`;
+    }
+  }
+  if (!anyStatus) {
+    breakdownHtml = `<div style="color:var(--text-muted);font-size:13px;text-align:center;padding:8px 0;">该时间段暂无订单</div>`;
+  }
+  document.getElementById('statusBreakdown').innerHTML = breakdownHtml;
+
+  // 状态统计标题：标注当前统计范围
+  const sbTitle = document.getElementById('statusBreakdownTitle');
+  if (sbTitle) {
+    sbTitle.textContent = currentStatRange
+      ? `📊 状态统计（${currentStatRange.start} ~ ${currentStatRange.end}）`
+      : '📊 状态统计';
+  }
+
+  // Total —— 同样跟随自定义时间段
+  const totalAmount = scopeOrders.reduce((sum, o) => sum + getOrderAmount(o), 0);
+  document.getElementById('totalAmount').textContent = formatAmount(totalAmount);
+  const totalLabel = document.querySelector('.total-amount-box .label');
+  if (totalLabel) {
+    totalLabel.innerHTML = currentStatRange
+      ? `统计范围内总金额<br><span style="font-size:11px;opacity:0.8;">${currentStatRange.start} 至 ${currentStatRange.end}</span>`
+      : '全部订单总金额';
+  }
+
+  // Set default dates
+  const ym = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+  if (!document.getElementById('statStartDate').value) {
+    document.getElementById('statStartDate').value = ym + '-01';
+    document.getElementById('statEndDate').value = ym + '-' + String(now.getDate()).padStart(2,'0');
+  }
+}
+
+function queryCustomRange() {
+  const startStr = document.getElementById('statStartDate').value;
+  const endStr = document.getElementById('statEndDate').value;
+  if (!startStr || !endStr) { showToast('请选择日期范围', 'error'); return; }
+
+  const matched = orders.filter(o => orderDateInRange(o.date, startStr, endStr));
+  const amount = matched.reduce((sum, o) => sum + getOrderAmount(o), 0);
+  document.getElementById('customResult').innerHTML = `
+    <div><span class="num">${matched.length}</span> 条订单</div>
+    <div class="amt">${formatAmount(amount)}</div>
+    <div style="font-size:12px;color:var(--text-muted);margin-top:6px;">${startStr} 至 ${endStr}</div>
+  `;
+
+  // 保存统计范围并刷新「状态统计 / 总金额」，使其随时间段变化
+  currentStatRange = { start: startStr, end: endStr };
+  renderStats();
+}
+
+// ==================== Action Menu ====================
+function showActionMenu() {
+  document.getElementById('actionMenuOverlay').classList.add('show');
+}
+function hideActionMenu() {
+  document.getElementById('actionMenuOverlay').classList.remove('show');
+}
+
+// ==================== Export ====================
+// 将订单日期（如 8/1、8/15、2026/8/1）转为 YYYY-MM-DD，用于日期范围过滤
+function parseOrderDate(d) {
+  if (!d || d === '-') return '';
+  const now = new Date();
+  const y = now.getFullYear();
+  let m, day;
+  const full = String(d).match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})$/);
+  if (full) return full[1] + '-' + full[2].padStart(2,'0') + '-' + full[3].padStart(2,'0');
+  const short = String(d).match(/^(\d{1,2})[\/\-](\d{1,2})$/);
+  if (short) return y + '-' + short[1].padStart(2,'0') + '-' + short[2].padStart(2,'0');
+  return '';
+}
+
+function exportExcel() {
+  if (orders.length === 0) { showToast('没有数据可导出', 'error'); return; }
+  // 日期范围过滤
+  const fromEl = document.getElementById('exportDateFrom');
+  const toEl = document.getElementById('exportDateTo');
+  const fromVal = fromEl ? fromEl.value : '';
+  const toVal = toEl ? toEl.value : '';
+  let filtered = orders;
+  if (fromVal || toVal) {
+    filtered = orders.filter(o => {
+      const d = parseOrderDate(o.date);
+      if (!d) return true; // 无日期的订单保留
+      if (fromVal && d < fromVal) return false;
+      if (toVal && d > toVal) return false;
+      return true;
+    });
+    if (filtered.length === 0) { showToast('所选日期范围内无订单', 'error'); return; }
+  }
+  const showLoading = document.getElementById('loading');
+  showLoading.classList.add('show');
+  try {
+    const headers = COLUMNS.map(c => c.label);
+    const data = [headers];
+    filtered.forEach(order => {
+      data.push(COLUMNS.map(col => {
+        let val;
+        if (col.key === 'costUnitPrice') {
+          val = getOrderCostUnitPrice(order);
+        } else if (col.key === 'costTotal') {
+          const cp = getOrderCostUnitPrice(order);
+          const q = parseInt(order.qty);
+          val = (cp != null && !isNaN(q)) ? cp * q : '';
+        } else if (col.computed) {
+          val = '';
+        } else {
+          val = order[col.key];
+        }
+        if (val === '-' || val === null || val === undefined || val === '') return '';
+        if (['qty', 'cod', 'shipping', 'costUnitPrice', 'costTotal', 'deposit', 'fullpay'].includes(col.key)) {
+          let num = parseInt(val);
+          return isNaN(num) ? val : num;
+        }
+        return val;
+      }));
+    });
+    const ws = XLSX.utils.aoa_to_sheet(data);
+    ws['!cols'] = COLUMNS.map(c => ({ wch: Math.max(c.width / 7, 8) }));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, '轮胎订单');
+    const now = new Date();
+    const dateRange = (fromVal || toVal) ? `_${fromVal || '起'}-${toVal || '止'}` : '';
+    const filename = `轮胎订单信息表${dateRange}_${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}.xlsx`;
+    XLSX.writeFile(wb, filename);
+    showToast(`已导出 ${filtered.length} 条订单！`, 'success');
+  } catch(e) {
+    showToast('导出失败: ' + e.message, 'error');
+  } finally {
+    showLoading.classList.remove('show');
+  }
+}
+
+// ==================== 成本模块（替换原「物流」模块） ====================
+// 成本单价表按型号查表派生：订单卡片展示 成本单价 / 成本总货款(元) = 成本单价 × 数量
+function loadCostTable() {
+  try {
+    // 与订单一致：按当前房间码隔离存储；首次运行时把旧版全局成本一次性迁移到当前房间
+    const raw = loadRoomJSON(COST_STORAGE_KEY);
+    costTable = raw ? JSON.parse(raw) : [];
+    if (!Array.isArray(costTable)) costTable = [];
+    // 迁移：为存量数据补 _updatedAt 与 brand，便于云端/LAN 同步(LWW)与按品牌分组
+    let changed = false;
+    const ts = Date.now();
+    costTable.forEach(c => {
+      if (c && c._updatedAt == null) { c._updatedAt = ts; changed = true; }
+      if (c && c.brand == null) { c.brand = detectBrand(c.model) || '未分类'; changed = true; }
+    });
+    if (changed) saveCostTable();
+  } catch(e) { costTable = []; }
+  // 清空时间戳同样按房间隔离（含旧版全局 costClearedAt 的一次性迁移）
+  try {
+    const key = roomStoreKey(COST_CLEARED_KEY);
+    let c = localStorage.getItem(key);
+    if (c == null) {
+      const legacy = localStorage.getItem('costClearedAt');
+      if (legacy != null && !localStorage.getItem('costClearedAt__migrated')) {
+        c = legacy;
+        try { localStorage.setItem(key, JSON.stringify(Number(legacy) || 0)); } catch(e2) {}
+        try { localStorage.setItem('costClearedAt__migrated', '1'); } catch(e2) {}
+      }
+    }
+    costClearedAt = c ? (parseInt(JSON.parse(c)) || 0) : 0;
+  } catch(e) { costClearedAt = 0; }
+}
+
+// 成本表合并（来自云端/LAN 的 remoteCost + 远端清空时间戳 remoteClearedAt）
+// - 若远端清空过成本表(remoteClearedAt 更大)，本地跟随清空
+// - 否则按 归一化型号 合并，同型号 LWW（_updatedAt 较大者胜）
+function syncCostTable(remoteCost, remoteClearedAt) {
+  remoteClearedAt = remoteClearedAt || 0;
+  const before = JSON.stringify(costTable) + '|' + costClearedAt;
+  if (remoteClearedAt && (!costClearedAt || remoteClearedAt > costClearedAt)) {
+    costTable = [];
+    costClearedAt = remoteClearedAt;
+    saveCostClearedAt();
+  }
+  if (!remoteCost || !Array.isArray(remoteCost) || remoteCost.length === 0) {
+    if (JSON.stringify(costTable) + '|' + costClearedAt !== before) saveCostTable();
+    return;
+  }
+  const map = {};
+  costTable.forEach((c, i) => { const k = normalizeModelForMatch(c.model); if (k) map[k] = i; });
+  remoteCost.forEach(rc => {
+    const k = normalizeModelForMatch(rc.model);
+    if (!k) return;
+    const p = parseInt(rc.unitPrice);
+    if (isNaN(p)) return;
+    const rUpdated = rc._updatedAt || 0;
+    if (map[k] != null) {
+      const local = costTable[map[k]];
+      const lUpdated = local._updatedAt || 0;
+      if (rUpdated >= lUpdated) costTable[map[k]] = { model: String(rc.model), unitPrice: p, _updatedAt: rUpdated, brand: rc.brand != null ? rc.brand : (local.brand || detectBrand(rc.model) || '未分类') };
+    } else {
+      costTable.push({ model: String(rc.model), unitPrice: p, _updatedAt: rUpdated, brand: rc.brand != null ? rc.brand : (detectBrand(rc.model) || '未分类') });
+      map[k] = costTable.length - 1;
+    }
+  });
+  if (JSON.stringify(costTable) + '|' + costClearedAt !== before) saveCostTable();
+}
+
+function saveCostTable() {
+  // 与订单一致：按当前房间码隔离存储
+  saveRoomJSON(COST_STORAGE_KEY, costTable);
+}
+
+// 清空时间戳同样按房间隔离存储
+function saveCostClearedAt() {
+  try { localStorage.setItem(roomStoreKey(COST_CLEARED_KEY), JSON.stringify(costClearedAt)); } catch(e) {}
+}
+
+// 归一化型号用于匹配（去空格/斜杠/点/横杠，转小写）
+function normalizeModelForMatch(m) {
+  return String(m == null ? '' : m).toLowerCase().replace(/[\s/\.\-]/g, '');
+}
+
+// 由成本表构建归一化查表 map：key=归一化型号, value=成本单价
+function getCostMap() {
+  const map = {};
+  costTable.forEach(c => {
+    const k = normalizeModelForMatch(c.model);
+    const p = parseInt(c.unitPrice);
+    if (k && !isNaN(p)) map[k] = p;
+  });
+  return map;
+}
+
+// 按订单型号查成本单价：精确匹配 → 最长公共子串兜底（适用于「米其林 245/35/20」与「245/35/20」互查）
+function getCostUnitPrice(model) {
+  if (!model || model === '-') return null;
+  const map = getCostMap();
+  if (!Object.keys(map).length) return null;
+  const nm = normalizeModelForMatch(model);
+  if (map[nm] != null) return map[nm];
+  // 兜底：找与订单型号有包含关系的成本项，取规格最长者（更精确）
+  let best = null, bestLen = 0;
+  for (const k in map) {
+    if (!k) continue;
+    let overlap = 0;
+    if (nm.includes(k) || k.includes(nm)) overlap = Math.min(nm.length, k.length);
+    if (overlap > bestLen) { bestLen = overlap; best = map[k]; }
+  }
+  return best;
+}
+
+// 订单生效成本单价：优先取订单手动填写值（order.costUnitPrice），无效时回退成本表按型号派生
+function getOrderCostUnitPrice(order) {
+  const manual = order && order.costUnitPrice;
+  if (manual != null && manual !== '' && manual !== '-') {
+    const p = parseInt(String(manual).replace(/[^\d]/g, ''));
+    if (!isNaN(p)) return p;
+  }
+  return getCostUnitPrice(order ? order.model : null);
+}
+
+function importCostExcel() { document.getElementById('costFileInput').click(); }
+
+function handleCostImport(event) {
+  const file = event.target.files[0];
+  event.target.value = ''; // 允许重复导入同一文件
+  if (!file) return;
+  const showLoading = document.getElementById('loading');
+  if (showLoading) showLoading.classList.add('show');
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    try {
+      const data = new Uint8Array(e.target.result);
+      const wb = XLSX.read(data, { type: 'array' });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(ws, { header: 1 });
+      if (rows.length < 2) { showToast('Excel文件没有数据', 'error'); return; }
+      const headers = rows[0].map(h => String(h).trim());
+      const imported = [];
+      for (let i = 1; i < rows.length; i++) {
+        const row = rows[i];
+        if (!row || row.every(c => !c)) continue;
+        let model = '', price = '';
+        headers.forEach((header, idx) => {
+          const val = row[idx];
+          if (val === undefined || val === null || val === '') return;
+          const h = String(header).toLowerCase().replace(/[\s()（）]/g, '');
+          if (h.includes('型号') || h.includes('规格') || h === 'model' || h === 'spec') model = String(val).trim();
+          else if (h.includes('成本') || h.includes('单价') || h.includes('价格') || h === 'price' || h === 'unitprice' || h === 'cost') price = String(val).trim();
+        });
+        if (!model) continue;
+        const p = parseInt(String(price).replace(/[^\d]/g, ''));
+        if (isNaN(p)) continue;
+        imported.push({ model: model, unitPrice: p });
+      }
+      if (imported.length === 0) { showToast('未识别到有效的型号/单价数据', 'error'); return; }
+      // 合并：相同型号覆盖；保留其余（带时间戳用于云端/LAN 同步 LWW）
+      // 选中具体品牌时，仅在该品牌范围内按型号合并，避免误改其他品牌同名规格
+      const nowTs = Date.now();
+      const existing = {};
+      costTable.forEach((c, i) => {
+        if (costCurrentBrand == null || entryBrand(c) === costCurrentBrand) existing[normalizeModelForMatch(c.model)] = i;
+      });
+      imported.forEach(c => {
+        const k = normalizeModelForMatch(c.model);
+        const brand = costCurrentBrand != null ? costCurrentBrand : (detectBrand(c.model) || '未分类');
+        const item = { model: c.model, unitPrice: c.unitPrice, _updatedAt: nowTs, brand: brand };
+        if (existing[k] != null) costTable[existing[k]] = item;
+        else { costTable.push(item); existing[k] = costTable.length - 1; }
+      });
+      saveCostTable();
+      renderCostTable();
+      publishCostToCloud();
+      syncToServerDebounced();
+      showToast('已导入 ' + imported.length + ' 条价格数据！', 'success');
+    } catch(err) {
+      showToast('导入失败: ' + err.message, 'error');
+    } finally {
+      if (showLoading) showLoading.classList.remove('show');
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+}
+
+// 从型号串识别品牌（扫描已知品牌关键词）
+function detectBrand(model) {
+  const m = String(model == null ? '' : model);
+  for (const b of BRAND_KEYWORDS) { if (m.indexOf(b) >= 0) return b; }
+  return null;
+}
+// 取成本条目的归属品牌（显式 brand 优先，否则从型号识别，兜底未分类）
+function entryBrand(c) { return (c && c.brand) || detectBrand(c && c.model) || '未分类'; }
+// 当前成本表中出现的所有品牌（含常用种子品牌与用户新增品牌），按种子顺序优先排序
+// 被用户隐藏的品牌（removedBrands，含内置与自定义）不显示
+function getCostBrands() {
+  const set = new Set(SEED_BRANDS.filter(b => removedBrands.indexOf(b) < 0)); // 常用品牌常驻导航，被隐藏的除外
+  costTable.forEach(c => { const b = entryBrand(c); if (removedBrands.indexOf(b) < 0) set.add(b); });
+  userBrands.forEach(b => { if (removedBrands.indexOf(b) < 0) set.add(b); });
+  const arr = Array.from(set);
+  arr.sort((a, b) => {
+    const ia = SEED_BRANDS.indexOf(a), ib = SEED_BRANDS.indexOf(b);
+    if (ia === -1 && ib === -1) return a.localeCompare(b, 'zh');
+    if (ia === -1) return 1;
+    if (ib === -1) return -1;
+    return ia - ib;
+  });
+  return arr;
+}
+// 渲染顶部品牌导航
+function renderCostBrandNav() {
+  const nav = document.getElementById('costBrandNav');
+  if (!nav) return;
+  const brands = getCostBrands();
+  let html = `<button class="brand-chip ${costCurrentBrand == null ? 'active' : ''}" data-brand="">全部</button>`;
+  brands.forEach(b => {
+    const cnt = costTable.filter(c => entryBrand(c) === b).length;
+    html += `<button class="brand-chip ${costCurrentBrand === b ? 'active' : ''}" data-brand="${escapeHtml(b)}">${escapeHtml(b)}<span class="brand-count">${cnt}</span></button>`;
+  });
+  html += `<button class="brand-chip brand-add" onclick="addUserBrand()">➕ 新增品牌</button>`;
+  nav.innerHTML = html;
+  // 绑定交互：点按=切换品牌；长按(触屏)或右键(鼠标)=隐藏品牌
+  nav.querySelectorAll('.brand-chip').forEach(chip => {
+    if (chip.classList.contains('brand-add')) return; // 新增品牌按钮保留原 onclick
+    const brandAttr = chip.getAttribute('data-brand');
+    const brand = (brandAttr === '' || brandAttr == null) ? null : brandAttr; // null = 全部
+    let timer = null, longPressed = false;
+    const startPress = () => { longPressed = false; timer = setTimeout(() => { longPressed = true; timer = null; if (brand) hideUserBrand(brand); }, 550); };
+    const cancelPress = () => { if (timer) { clearTimeout(timer); timer = null; } };
+    const onClick = (e) => {
+      if (longPressed) { e.preventDefault(); e.stopPropagation(); longPressed = false; return; }
+      if (brand == null) setCostBrand(null); else setCostBrand(brand);
+    };
+    chip.addEventListener('touchstart', startPress, { passive: true });
+    chip.addEventListener('touchend', cancelPress);
+    chip.addEventListener('touchmove', cancelPress);
+    chip.addEventListener('touchcancel', cancelPress);
+    chip.addEventListener('contextmenu', (e) => { e.preventDefault(); if (brand) hideUserBrand(brand); });
+    chip.addEventListener('click', onClick);
+  });
+}
+function setCostBrand(brand) {
+  costCurrentBrand = brand;
+  costEditingIdx = -1;
+  renderCostTable();
+}
+function saveUserBrands() {
+  try { localStorage.setItem(COST_USER_BRANDS_KEY, JSON.stringify(userBrands)); } catch(e) {}
+  try { localStorage.setItem(COST_REMOVED_BRANDS_KEY, JSON.stringify(removedBrands)); } catch(e) {}
+}
+function loadUserBrands() {
+  try {
+    const raw = localStorage.getItem(COST_USER_BRANDS_KEY);
+    userBrands = raw ? JSON.parse(raw) : [];
+    if (!Array.isArray(userBrands)) userBrands = [];
+  } catch(e) { userBrands = []; }
+  try {
+    const raw2 = localStorage.getItem(COST_REMOVED_BRANDS_KEY);
+    removedBrands = raw2 ? JSON.parse(raw2) : [];
+    if (!Array.isArray(removedBrands)) removedBrands = [];
+  } catch(e) { removedBrands = []; }
+}
+function addUserBrand() {
+  const name = prompt('请输入新增品牌名称（如：固铂）：');
+  if (!name || !name.trim()) return;
+  const b = name.trim();
+  if (SEED_BRANDS.indexOf(b) >= 0) {
+    // 内置品牌：若曾被隐藏则恢复显示，否则直接进入
+    const ri = removedBrands.indexOf(b);
+    if (ri >= 0) { removedBrands.splice(ri, 1); saveUserBrands(); }
+  } else if (userBrands.indexOf(b) < 0) {
+    userBrands.push(b);
+    saveUserBrands();
+  }
+  costCurrentBrand = b;
+  costEditingIdx = -1;
+  renderCostBrandNav();
+  renderCostTable();
+  showToast('已切换到品牌：' + b + (SEED_BRANDS.indexOf(b) < 0 ? '（已新增）' : (removedBrands.indexOf(b) < 0 && SEED_BRANDS.indexOf(b) >= 0 ? '（已恢复显示）' : '')), 'success');
+}
+function hideUserBrand(brand) {
+  const isSeed = SEED_BRANDS.indexOf(brand) >= 0;
+  customConfirm('确定隐藏品牌「' + brand + '」' + (isSeed ? '（仅从导航隐藏，可再次新增恢复，成本数据保留）' : '（从导航隐藏，成本数据保留）') + '？', function(ok) {
+    if (!ok) return;
+    if (isSeed) {
+      if (removedBrands.indexOf(brand) < 0) removedBrands.push(brand);
+    } else {
+      userBrands = userBrands.filter(b => b !== brand);
+      if (removedBrands.indexOf(brand) < 0) removedBrands.push(brand);
+    }
+    // 隐藏仅移出导航与「全部」分组视图，成本数据保留，可再次新增恢复
+    saveUserBrands();
+    if (costCurrentBrand === brand) costCurrentBrand = null;
+    renderCostTable();
+    publishCostToCloud();
+    syncToServerDebounced();
+    showToast('已隐藏品牌：' + brand, 'success');
+  });
+}
+// 内联编辑
+function editCostRow(idx) { costEditingIdx = idx; renderCostTable(); }
+function cancelCostEdit() { costEditingIdx = -1; renderCostTable(); }
+function saveCostEdit(idx) {
+  if (idx < 0 || idx >= costTable.length) return;
+  const modelEl = document.getElementById('editModel_' + idx);
+  const priceEl = document.getElementById('editPrice_' + idx);
+  if (!modelEl || !priceEl) return;
+  const model = modelEl.value.trim();
+  const p = parseInt(String(priceEl.value).replace(/[^\d]/g, ''));
+  if (!model) { showToast('型号不能为空', 'error'); return; }
+  if (isNaN(p)) { showToast('单价无效', 'error'); return; }
+  const brand = entryBrand({ model: model, brand: costTable[idx].brand });
+  costTable[idx] = { model: model, unitPrice: p, _updatedAt: Date.now(), brand: brand };
+  costEditingIdx = -1;
+  saveCostTable();
+  renderCostTable();
+  publishCostToCloud();
+  syncToServerDebounced();
+  showToast('已保存修改', 'success');
+}
+
+// 构建单张成本表（型号 / 成本单价 / 操作），支持内联编辑行
+function buildCostTableHtml(list) {
+  let html = '<table class="cost-table"><thead><tr><th>型号</th><th>单价(元)</th><th>操作</th></tr></thead><tbody>';
+  list.forEach(r => {
+    if (costEditingIdx === r.i) {
+      html += `<tr><td><input class="cost-edit-input" id="editModel_${r.i}" value="${escapeHtml(String(r.c.model))}"></td>`
+            + `<td><input class="cost-edit-input" id="editPrice_${r.i}" value="${r.c.unitPrice}" style="width:72px"></td>`
+            + `<td><button class="btn btn-sm btn-primary" onclick="saveCostEdit(${r.i})">保存</button> <button class="btn btn-sm btn-outline" onclick="cancelCostEdit()">取消</button></td></tr>`;
+    } else {
+      html += `<tr><td class="cost-model">${escapeHtml(String(r.c.model))}</td><td class="money">${r.c.unitPrice}</td>`
+            + `<td><button class="btn btn-sm btn-outline" onclick="editCostRow(${r.i})">编辑</button> <button class="btn btn-sm btn-outline danger" onclick="deleteCostRow(${r.i})">删除</button></td></tr>`;
+    }
+  });
+  html += '</tbody></table>';
+  return html;
+}
+
+function renderCostTable() {
+  renderCostBrandNav();
+  const container = document.getElementById('costTableContainer');
+  if (!container) return;
+  const searchEl = document.getElementById('costSearch');
+  const search = (searchEl ? searchEl.value : '').trim().toLowerCase();
+
+  // 当前品牌上下文提示
+  const ctx = document.getElementById('costBrandContext');
+  if (ctx) ctx.innerHTML = costCurrentBrand ? ('当前品牌：<b>' + escapeHtml(costCurrentBrand) + '</b>（导入 / 添加将归入此品牌）') : '当前：全部品牌';
+
+  // 过滤当前品牌
+  let rows = costTable.map((c, i) => ({ c, i }));
+  rows = rows.filter(r => costCurrentBrand == null || entryBrand(r.c) === costCurrentBrand);
+  // 搜索
+  let list = rows;
+  if (search) list = rows.filter(r => String(r.c.model).toLowerCase().indexOf(search) >= 0);
+
+  const countEl = document.getElementById('costCount');
+  if (countEl) {
+    let text = '共 ' + costTable.length + ' 条';
+    if (costCurrentBrand) text += '（' + escapeHtml(costCurrentBrand) + ' ' + rows.length + '）';
+    if (search) text += '（筛选 ' + list.length + '）';
+    countEl.textContent = text;
+  }
+  if (list.length === 0) {
+    const emptyMsg = costTable.length === 0
+      ? '暂无价格数据<br>点「导入Excel」按型号导入单价'
+      : (costCurrentBrand ? escapeHtml(costCurrentBrand) + ' 暂无价格数据<br>点「导入Excel」导入该品牌型号与单价' : '没有匹配的型号');
+    container.innerHTML = `<div class="empty-state"><div class="icon">💰</div><p>${emptyMsg}</p></div>`;
+    return;
+  }
+
+  // 全部视图按品牌分组；单品牌视图直接表格
+  let html = '';
+  if (costCurrentBrand == null) {
+    const groups = {};
+    list.forEach(r => { const b = entryBrand(r.c); (groups[b] = groups[b] || []).push(r); });
+    getCostBrands().forEach(b => {
+      if (!groups[b]) return;
+      html += `<div class="cost-group-row"><span class="cost-group-title">🏷️ ${escapeHtml(b)}</span><span class="cost-group-count">${groups[b].length} 条</span></div>`;
+      html += buildCostTableHtml(groups[b]);
+    });
+  } else {
+    html = buildCostTableHtml(list);
+  }
+  container.innerHTML = html;
+}
+
+function deleteCostRow(idx) {
+  if (idx < 0 || idx >= costTable.length) return;
+  costTable.splice(idx, 1);
+  saveCostTable();
+  renderCostTable();
+  publishCostToCloud();
+  syncToServerDebounced();
+}
+
+function addCostRowManual() {
+  const brandHint = costCurrentBrand ? ('（当前品牌：' + costCurrentBrand + '，可只填规格；型号含其他品牌名将自动归类）') : '';
+  const model = prompt('请输入型号（如：245/35/20）' + brandHint + '：');
+  if (!model || !model.trim()) return;
+  const priceStr = prompt('请输入单价（元）：');
+  if (priceStr === null) return;
+  const p = parseInt(String(priceStr).replace(/[^\d]/g, ''));
+  if (isNaN(p)) { showToast('单价无效', 'error'); return; }
+  // 优先按型号中的品牌关键词自动归类；型号未带品牌时，若在品牌视图则归入当前品牌，否则记未分类
+  const detected = detectBrand(model);
+  const brand = detected || (costCurrentBrand != null ? costCurrentBrand : '未分类');
+  const k = normalizeModelForMatch(model);
+  const nowTs = Date.now();
+  const existingIdx = costTable.findIndex(c => entryBrand(c) === brand && normalizeModelForMatch(c.model) === k);
+  if (existingIdx >= 0) costTable[existingIdx] = { model: model.trim(), unitPrice: p, _updatedAt: nowTs, brand: brand };
+  else costTable.push({ model: model.trim(), unitPrice: p, _updatedAt: nowTs, brand: brand });
+  saveCostTable();
+  renderCostTable();
+  publishCostToCloud();
+  syncToServerDebounced();
+  showToast('已添加（归类：' + brand + '）', 'success');
+}
+
+function clearCostTable() {
+  if (costTable.length === 0 && costCurrentBrand == null) { showToast('价格表已为空', 'error'); return; }
+  const msg = costCurrentBrand ? ('确定清空【' + costCurrentBrand + '】的价格数据？此操作不可撤销') : '确定清空全部价格数据？此操作不可撤销';
+  customConfirm(msg, function(ok) {
+    if (!ok) return;
+    if (costCurrentBrand) {
+      const before = costTable.length;
+      costTable = costTable.filter(c => entryBrand(c) !== costCurrentBrand);
+      if (costTable.length === before) { showToast('该品牌暂无可清空数据', 'error'); return; }
+    } else {
+      costTable = [];
+      costClearedAt = Date.now();
+      saveCostClearedAt();
+    }
+    saveCostTable();
+    renderCostTable();
+    publishCostToCloud();
+    syncToServerDebounced();
+    showToast('价格数据已清空', 'success');
+  });
+}
+
+// ==================== Import ====================
+function importExcel() { document.getElementById('fileInput').click(); }
+
+function handleFileImport(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const showLoading = document.getElementById('loading');
+  showLoading.classList.add('show');
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    try {
+      const data = new Uint8Array(e.target.result);
+      const wb = XLSX.read(data, { type: 'array' });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(ws, { header: 1 });
+      if (rows.length < 2) { showToast('Excel文件没有数据', 'error'); return; }
+      const headers = rows[0].map(h => String(h).trim());
+      const imported = [];
+      for (let i = 1; i < rows.length; i++) {
+        const row = rows[i];
+        if (!row || row.every(c => !c)) continue;
+        const order = {};
+        COLUMNS.forEach(col => { order[col.key] = '-'; });
+        order.status = '未发货';
+        headers.forEach((header, idx) => {
+          const val = row[idx];
+          if (val === undefined || val === null || val === '') return;
+          const h = header.toLowerCase().replace(/[\s()（）]/g, '');
+          if (h.includes('日期') || h === 'date') order.date = String(val);
+          else if (h.includes('型号') || h === 'model') order.model = String(val);
+          else if (h.includes('品牌') || h === 'brand') order.brand = String(val);
+          else if (h.includes('规格') || h === 'spec') order.spec = String(val);
+          else if (h.includes('花纹') || h === 'pattern') appendPatternToRemark(order, String(val));
+          else if (h.includes('数量') || h === 'qty') order.qty = String(val);
+          else if (h.includes('代收') || h.includes('到付') || h === 'cod') order.cod = String(val);
+          else if (h.includes('运费') || h === 'shipping') order.shipping = String(val);
+          else if (h.includes('售后') || h === 'aftersale') order.aftersale = String(val);
+          else if (h.includes('定金') || h === 'deposit') order.deposit = String(val);
+          else if (h.includes('全款') || h === 'fullpay') order.fullpay = String(val);
+          else if (h.includes('备注') || h === 'remark') order.remark = String(val);
+          else if (h.includes('收件人') || h === 'name') order.name = String(val);
+          else if (h.includes('电话') || h === 'phone') order.phone = String(val);
+          else if (h.includes('地址') || h.includes('收货') || h === 'address') order.address = String(val);
+          else if (h.includes('物流') || h === 'trackingno') order.trackingNo = String(val);
+          else if (h.includes('状态') || h === 'status') {
+            let s = String(val);
+            if (s === '正常') s = '签收';
+            if (s === '待确认') s = '未发货';
+            order.status = s;
+          }
+        });
+        // 旧 Excel 若分列存了品牌/规格，合并为型号
+        if (!order.model && (order.brand || order.spec)) {
+          order.model = [order.brand, order.spec].filter(v => v && v !== '-').join(' ').trim();
+        }
+        // Ensure imported orders have IDs and timestamps
+        order._id = genOrderId();
+        order._updatedAt = Date.now();
+        imported.push(order);
+      }
+      if (imported.length > 0) {
+        if (orders.length > 0) {
+          customConfirm('当前已有 ' + orders.length + ' 条数据，是否合并？\n确定=合并(追加)，取消=替换全部', function(ok) {
+            if (ok) {
+              orders = orders.concat(imported);
+            } else {
+              // Add old orders to tombstones
+              orders.forEach(o => {
+                if (o._id) tombstones.push({ id: o._id, deletedAt: Date.now() });
+              });
+              orders = imported;
+            }
+            saveData();
+            renderOrderList();
+            showToast('成功导入 ' + imported.length + ' 条订单！', 'success');
+          });
+        } else {
+          orders = imported;
+          saveData();
+          renderOrderList();
+          showToast('成功导入 ' + imported.length + ' 条订单！', 'success');
+        }
+      } else {
+        showToast('未找到有效数据', 'error');
+      }
+    } catch(err) {
+      showToast('导入失败: ' + err.message, 'error');
+    } finally {
+      showLoading.classList.remove('show');
+      event.target.value = '';
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+// ==================== Clear ====================
+function clearAll() {
+  if (orders.length === 0) { showToast('已经是空的了', 'error'); return; }
+  customConfirm('确定要清空全部 ' + orders.length + ' 条订单吗？此操作不可恢复！', function(ok) {
+    if (ok) {
+      // Add all orders to tombstones so deletion syncs
+      orders.forEach(o => {
+        if (o._id) tombstones.push({ id: o._id, deletedAt: Date.now() });
+      });
+      orders = [];
+      saveData();
+      renderOrderList();
+      showToast('已清空全部数据', 'success');
+    }
+  });
+}
+
+// ==================== Confirm Modal ====================
+let _confirmCallback = null;
+function customConfirm(msg, callback) {
+  document.getElementById('confirmText').textContent = msg;
+  document.getElementById('confirmOverlay').classList.add('show');
+  _confirmCallback = callback;
+}
+function closeConfirm(result) {
+  document.getElementById('confirmOverlay').classList.remove('show');
+  if (_confirmCallback) {
+    var cb = _confirmCallback;
+    _confirmCallback = null;
+    cb(result);
+  }
+}
+
+// ==================== Toast ====================
+function showToast(msg, type) {
+  const toast = document.getElementById('toast');
+  toast.textContent = msg;
+  toast.className = 'toast show ' + (type || '');
+  setTimeout(() => { toast.className = 'toast'; }, 2500);
+}
+
+// ==================== Auto-parse on input ====================
+let parseTimer = null;
+document.getElementById('orderInput').addEventListener('input', function() {
+  clearTimeout(parseTimer);
+  if (this.value.trim().length > 10) {
+    parseTimer = setTimeout(() => parseAndPreview(), 500);
+  }
+});
+
+document.getElementById('orderInput').addEventListener('paste', function() {
+  setTimeout(() => { if (this.value.trim().length > 10) parseAndPreview(); }, 100);
+});
+
+// ==================== Init ====================
+// Resolve cloud room code from URL hash / localStorage BEFORE loading per-room data,
+// so the correct room's dataset is loaded on first paint.
+getCloudRoomCode();
+// 首次运行：为已创建的房间预置中文显示名（之后以用户保存为准）
+if (!localStorage.getItem(ROOM_NAMES_KEY)) {
+  saveRoomNames({ CZ8888: '潮州订单工作台', DJ8888: '大吉订单工作台' });
+}
+applyRoomDisplayName();
+loadCustomColumns();
+loadData();
+loadCostTable();
+loadUserBrands();
+// 初始化录入格式切换按钮（恢复上次选择的格式一/二）
+setInputFormat(inputFormatMode);
+renderOrderList();
+updateSortBarUI();
+updateStatsBar();
+// Create preventive backup BEFORE any sync can touch the data
+if (orders.length > 0) {
+  createAutoBackup();
+}
+// Robust search handling: mobile WebViews (e.g. WeChat) often don't fire oninput
+// reliably, so we bind multiple events and keep an explicit clear button.
+(function attachSearchListeners() {
+  const si = document.getElementById('searchInput');
+  if (!si) return;
+  const onSearch = function() {
+    const cb = document.getElementById('searchClearBtn');
+    if (cb) cb.style.display = si.value ? 'block' : 'none';
+    renderOrderList();
+  };
+  si.addEventListener('input', onSearch);
+  si.addEventListener('keyup', onSearch);
+  si.addEventListener('compositionend', onSearch);
+  si.addEventListener('search', onSearch);
+})();
+// Initialize cloud sync (async, non-blocking)
+initSync();
+// Initialize MQTT cloud sync (works on public internet, no server needed)
+initCloudSync();
+
+// ===== 后台/前台切换处理：根治"切换后台后点击加入表格偶尔卡顿没反应" =====
+// 移动端 WebView 切到后台时，浏览器会节流/冻结定时器；长时间后台后 MQTT 可能掉线。
+// 若不做处理，回到前台时轮询定时器会"突发"执行、云端连接处于异常态，导致主线程卡顿、
+// 点击"加入表格"无响应。这里在后台暂停所有轮询，前台恢复并重建云端连接、补一次同步。
+(function attachVisibilityHandler() {
+  function onVisible() {
+    // 回到前台：恢复云端连接与轮询，并立即补一次同步追上最新数据
+    if (typeof cloudClient !== 'undefined' && cloudClient && !cloudConnected) {
+      initCloudSync();
+    } else if (cloudConnected) {
+      if (cloudPollTimer) { clearInterval(cloudPollTimer); cloudPollTimer = null; }
+      cloudPollTimer = setInterval(() => {
+        if (cloudConnected && orders.length > 0) cloudPublishData(false);
+      }, 20000);
+      publishCostToCloud();
+    }
+    if (syncEnabled) {
+      if (syncPollTimer) { clearInterval(syncPollTimer); syncPollTimer = null; }
+      syncPollTimer = setInterval(pollServer, 10000);
+      setTimeout(pollServer, 300); // 立即补一次
+    }
+  }
+  function onHidden() {
+    // 切到后台：暂停轮询，避免后台 CPU 占用与被节流后的"突发"执行
+    if (syncPollTimer) { clearInterval(syncPollTimer); syncPollTimer = null; }
+    if (cloudPollTimer) { clearInterval(cloudPollTimer); cloudPollTimer = null; }
+  }
+  if (typeof document.hidden !== 'undefined') {
+    document.addEventListener('visibilitychange', function() {
+      if (document.hidden) onHidden(); else onVisible();
+    });
+  }
+  // 页面失去/获得焦点也兜底处理一次（部分 WebView 不触发 visibilitychange）
+  window.addEventListener('focus', onVisible);
+})();
+</script>
+
+</body>
+</html>

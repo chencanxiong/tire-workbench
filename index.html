@@ -1773,6 +1773,8 @@ function loadData() {
         if (!o.model && (o.brand || o.spec)) {
           o.model = [o.brand, o.spec].filter(v => v && v !== '-').join(' ').trim();
         }
+        // 历史已作废订单兜底归零（保证「所有」作废订单金额为零）
+        if (o.status === '作废') zeroVoidAmounts(o);
       });
     } catch(e) { orders = []; }
   } else {
@@ -1783,16 +1785,18 @@ function loadData() {
     if (v1raw && !localStorage.getItem('tireOrders_workbench__migrated')) {
       try {
         const v1 = JSON.parse(v1raw);
-      v1.forEach(o => {
-        migrateStatus(o);
-        pruneRemovedColumns(o);
-        ['channel', 'signer', 'unitPrice', 'totalAmount'].forEach(key => {
-            if (!(key in o) || o[key] === undefined || o[key] === null) o[key] = '-';
-          });
+        v1.forEach(o => {
+          migrateStatus(o);
+          pruneRemovedColumns(o);
+          ['channel', 'signer', 'unitPrice', 'totalAmount'].forEach(key => {
+              if (!(key in o) || o[key] === undefined || o[key] === null) o[key] = '-';
+            });
           // 旧数据：brand/spec 合并为 model（型号）
           if (!o.model && (o.brand || o.spec)) {
             o.model = [o.brand, o.spec].filter(v => v && v !== '-').join(' ').trim();
           }
+          // 历史已作废订单兜底归零（保证「所有」作废订单金额为零）
+          if (o.status === '作废') zeroVoidAmounts(o);
         });
         orders = v1;
         saveRoomJSON(STORAGE_KEY_ORDERS, orders);
@@ -3572,11 +3576,42 @@ function toggleCard(e, el) {
 }
 
 // 设置订单状态；当状态切换为「拒收」时，代收金额自动归零（仍可手动修改）
+// 作废订单需归零的金额字段（订单自身持有的金额；成本单价/金额随订单状态联动归零）
+const VOID_AMOUNT_KEYS = ['cod', 'deposit', 'fullpay', 'shipping', 'costUnitPrice', 'totalAmount'];
+
+// 将作废订单的金额备份并归零（支持后续恢复）
+function zeroVoidAmounts(order) {
+  if (!order) return;
+  if (!order._voidAmounts) {
+    order._voidAmounts = {};
+    VOID_AMOUNT_KEYS.forEach(k => { order._voidAmounts[k] = order[k]; });
+  }
+  VOID_AMOUNT_KEYS.forEach(k => { order[k] = 0; });
+}
+// 恢复作废订单的金额（取消作废时还原）
+function restoreVoidAmounts(order) {
+  if (!order) return;
+  if (order._voidAmounts) {
+    VOID_AMOUNT_KEYS.forEach(k => {
+      const v = order._voidAmounts[k];
+      order[k] = (v === undefined || v === null) ? '-' : v;
+    });
+    delete order._voidAmounts;
+  }
+}
+
 function setOrderStatus(order, status) {
   if (!order) return;
+  const prev = order.status || '-';
   order.status = status || '-';
   if (order.status === '拒收') {
     order.cod = 0;
+  }
+  // 作废：归零所有金额；由作废恢复为其它状态时还原金额（避免误作废丢数据）
+  if (order.status === '作废' && prev !== '作废') {
+    zeroVoidAmounts(order);
+  } else if (order.status !== '作废' && prev === '作废') {
+    restoreVoidAmounts(order);
   }
 }
 

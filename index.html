@@ -1218,7 +1218,7 @@ html, body {
     <div class="page" id="page-list">
       <div class="search-bar">
         <div class="search-input-wrap">
-          <input type="text" id="searchInput" placeholder="🔍 搜索型号/收件人/联系方式/地址..." oninput="renderOrderList()">
+          <input type="text" id="searchInput" autocomplete="off" placeholder="🔍 搜索型号/收件人/联系方式/地址..." oninput="renderOrderList()">
           <button class="search-clear" id="searchClearBtn" type="button" style="display:none;" onclick="clearSearch()">✕</button>
         </div>
       </div>
@@ -1437,10 +1437,16 @@ html, body {
   <div style="margin-top:12px;padding:12px;background:#fff3cd;border-radius:8px;border:1px solid #ffeaa7;">
     <div style="font-size:13px;font-weight:600;color:#856404;margin-bottom:8px;">🛡️ 数据安全</div>
     <div style="font-size:12px;color:#856404;line-height:1.6;margin-bottom:8px;">
-      每次云端同步前自动备份本地数据<br>
-      如遇数据丢失，可点击下方按钮恢复
+      云端独立快照：订单/成本自动备份到云端<br>
+      清缓存或换设备也能从云端恢复（不依赖本机）
     </div>
-    <button class="sync-btn" onclick="restoreFromBackup()" style="background:#28a745;width:100%;">📦 恢复备份数据</button>
+    <div class="sync-info-row" style="margin-bottom:8px;">
+      <span class="label">云端备份时间</span>
+      <span class="value" id="cloudBackupStatus" style="font-size:12px;">尚未备份</span>
+    </div>
+    <button class="sync-btn" onclick="publishCloudBackup();showToast('已立即备份到云端','success')" style="background:#28a745;width:100%;margin-bottom:6px;">☁️ 立即云端备份</button>
+    <button class="sync-btn secondary" onclick="restoreFromCloudBackup()" style="width:100%;margin-bottom:6px;">♻️ 从云端恢复</button>
+    <button class="sync-btn" onclick="restoreFromBackup()" style="background:#6c757d;width:100%;">📦 恢复本机备份</button>
   </div>
   <button class="sync-btn secondary" onclick="hideSyncPanel()" style="margin-top:16px;">关闭</button>
 </div>
@@ -1826,6 +1832,7 @@ function saveData() {
   saveRoomJSON(STORAGE_KEY_ORDERS, orders);
   saveTombstones();
   syncToServerDebounced();
+  scheduleCloudBackup(); // 订单变更后防抖备份到云端
 }
 function saveCustomColumns() {
   saveRoomJSON(STORAGE_KEY_COLS, customColumns);
@@ -2062,6 +2069,7 @@ function showSyncPanel() {
   if (cloudInput) cloudInput.value = cloudRoomCode;
   updateSyncPanelInfo();
   updateCloudStatus(cloudConnected ? 'connected' : 'connecting');
+  updateCloudBackupStatus();
   generateQRCode();
 }
 
@@ -2107,6 +2115,11 @@ let cloudRoomCode = localStorage.getItem('cloudRoomCode') || '';
 let cloudDataTimestamp = parseInt(localStorage.getItem('cloudDataTimestamp') || '0');
 let cloudDebounceTimer = null;
 let cloudPollTimer = null;
+// 云端独立备份（retained 全量快照，独立于实时同步通道，可作回滚点）
+let lastCloudBackupPayload = null;
+let lastCloudBackupTs = 0;
+let cloudBackupDebounceTimer = null;
+let cloudBackupInterval = null;
 const MQTT_BROKER_URL = 'wss://broker.hivemq.com:8884/mqtt';
 const MQTT_TOPIC_PREFIX = 'tire-workbench-v2/';
 // 成本表与订单一样按房间独立同步：不再使用全局 topic，每个房间各自一个成本 topic，
@@ -2114,6 +2127,11 @@ const MQTT_TOPIC_PREFIX = 'tire-workbench-v2/';
 function costMqttTopic() {
   return MQTT_TOPIC_PREFIX + (cloudRoomCode || 'default') + '/cost';
 }
+// 云端独立备份主题（retained 全量快照，独立于实时同步通道，可作为回滚点）
+function backupMqttTopic() {
+  return MQTT_TOPIC_PREFIX + (cloudRoomCode || 'default') + '/backup';
+}
+const CLOUD_BACKUP_TS_KEY = 'cloudBackupTs';
 
 // Create auto-backup of current data before any cloud sync overwrites it
 function createAutoBackup() {
@@ -2347,6 +2365,7 @@ function initCloudSync() {
       cloudClient.subscribe(topic, { qos: 0 });
       cloudClient.subscribe(costMqttTopic(), { qos: 0 });
       cloudClient.subscribe(roomNameMqttTopic(), { qos: 0 });
+      cloudClient.subscribe(backupMqttTopic(), { qos: 0 });
       updateCloudStatus('connected');
       // 应用并广播本房间显示名（本地优先，云端再同步）
       applyRoomDisplayName();
@@ -2357,10 +2376,11 @@ function initCloudSync() {
       setTimeout(() => {
         cloudPublishData(true);
         publishCostToCloud();
+        publishCloudBackup(); // 连接后立刻刷新云端快照
         // Also send a sync request asking other devices to share their data
         publishSyncRequest();
       }, 500);
-      
+
       // Start periodic re-publish to keep data fresh (every 20 seconds)
       if (cloudPollTimer) clearInterval(cloudPollTimer);
       cloudPollTimer = setInterval(() => {
@@ -2368,6 +2388,12 @@ function initCloudSync() {
           cloudPublishData(false);
         }
       }, 20000);
+
+      // 定期（5 分钟）把最新数据快照备份到云端，作为独立兜底
+      if (cloudBackupInterval) clearInterval(cloudBackupInterval);
+      cloudBackupInterval = setInterval(() => {
+        if (cloudConnected) publishCloudBackup();
+      }, 300000);
     });
 
     cloudClient.on('message', (msgTopic, message) => {
@@ -2386,6 +2412,22 @@ function initCloudSync() {
           if (data.code && data.code === (cloudRoomCode || '')) {
             setRoomName(data.code, data.name || '');
             applyRoomDisplayName();
+          }
+          return;
+        }
+
+        // Handle cloud backup snapshot (independent retained topic, used for restore/bootstrap)
+        if (data.type === 'backup') {
+          lastCloudBackupPayload = data;
+          lastCloudBackupTs = data.timestamp || 0;
+          try { localStorage.setItem(roomStoreKey(CLOUD_BACKUP_TS_KEY), String(lastCloudBackupTs)); } catch(e) {}
+          updateCloudBackupStatus();
+          // 本机该房间无任何数据（新设备 / 清缓存）时，自动从云端快照引导，避免拿不到历史
+          if (orders.length === 0 && tombstones.length === 0 && !window.__cloudBootstrapDone) {
+            window.__cloudBootstrapDone = true;
+            if (applyCloudBackupPayload(data)) {
+              showToast('已从云端备份自动恢复 ' + orders.length + ' 条数据', 'info');
+            }
           }
           return;
         }
@@ -2548,6 +2590,104 @@ function publishCostToCloud() {
   } catch(e) {
     console.error('Cost publish error:', e);
   }
+}
+
+// ==================== 云端独立备份（快照 / 回滚）====================
+// 把当前房间订单+成本+列结构的全量快照发布到独立的 backup 主题（retain），
+// 即使清掉浏览器缓存或换新设备，打开链接也能从云端快照恢复（与主同步通道分离）。
+function publishCloudBackup() {
+  if (!cloudConnected || !cloudClient) return false;
+  ensureOrdersHaveIds();
+  try {
+    const payload = {
+      type: 'backup',
+      orders: orders,
+      tombstones: tombstones,
+      costTable: costTable,
+      costClearedAt: costClearedAt,
+      customColumns: customColumns,
+      deletedBuiltinKeys: deletedBuiltinKeys,
+      columnOrder: COLUMNS.map(c => c.key),
+      timestamp: Date.now()
+    };
+    cloudClient.publish(backupMqttTopic(), JSON.stringify(payload), { qos: 0, retain: true });
+    lastCloudBackupTs = payload.timestamp;
+    lastCloudBackupPayload = payload;
+    try { localStorage.setItem(roomStoreKey(CLOUD_BACKUP_TS_KEY), String(lastCloudBackupTs)); } catch(e) {}
+    updateCloudBackupStatus();
+    console.log('Cloud backup published: ' + orders.length + ' orders, ' + costTable.length + ' cost items');
+    return true;
+  } catch(e) {
+    console.error('Cloud backup error:', e);
+    return false;
+  }
+}
+
+// 数据变更后 3 秒防抖自动备份到云端
+function scheduleCloudBackup() {
+  if (cloudBackupDebounceTimer) clearTimeout(cloudBackupDebounceTimer);
+  cloudBackupDebounceTimer = setTimeout(() => { publishCloudBackup(); }, 3000);
+}
+
+// 将云端快照应用到本地（full replace）
+function applyCloudBackupPayload(p) {
+  if (!p || (!p.orders && !p.tombstones)) return false;
+  orders = p.orders || [];
+  tombstones = p.tombstones || [];
+  if (p.costTable) {
+    costTable = p.costTable;
+    if (typeof p.costClearedAt === 'number') costClearedAt = p.costClearedAt;
+  }
+  if (p.customColumns) customColumns = p.customColumns;
+  if (p.deletedBuiltinKeys) deletedBuiltinKeys = p.deletedBuiltinKeys;
+  if (p.columnOrder) columnOrder = p.columnOrder;
+  rebuildColumns();
+  ensureOrdersHaveIds();
+  saveRoomJSON(STORAGE_KEY_ORDERS, orders);
+  saveRoomJSON(STORAGE_KEY_TOMBSTONES, tombstones);
+  saveCostTable();
+  saveCustomColumns();
+  renderOrderList();
+  updateStatsBar();
+  return true;
+}
+
+// 手动：从云端备份恢复（点击「从云端恢复」）
+function restoreFromCloudBackup() {
+  if (!cloudConnected || !cloudClient) {
+    showToast('云端未连接，无法恢复', 'error');
+    return;
+  }
+  customConfirm('从云端恢复将用最近一次云端备份覆盖当前数据，确定继续？', function(ok) {
+    if (!ok) return;
+    const applyNow = function() {
+      if (!lastCloudBackupPayload) {
+        publishCloudBackup(); // 本地暂无快照，先推一份当前数据作为快照
+        showToast('已用当前数据生成云端备份', 'info');
+        return;
+      }
+      if (applyCloudBackupPayload(lastCloudBackupPayload)) {
+        showToast('已从云端备份恢复 ' + orders.length + ' 条数据', 'success');
+      } else {
+        showToast('云端备份为空', 'error');
+      }
+    };
+    if (!lastCloudBackupPayload) {
+      // 重新订阅以触发 retained 投递，确保拿到最新云端快照
+      try { cloudClient.subscribe(backupMqttTopic(), { qos: 0 }); } catch(e) {}
+      setTimeout(applyNow, 800);
+    } else {
+      applyNow();
+    }
+  });
+}
+
+function updateCloudBackupStatus() {
+  const el = document.getElementById('cloudBackupStatus');
+  if (!el) return;
+  let ts = lastCloudBackupTs;
+  if (!ts) { try { ts = parseInt(localStorage.getItem(roomStoreKey(CLOUD_BACKUP_TS_KEY)) || '0'); } catch(e) {} }
+  el.textContent = ts ? new Date(ts).toLocaleString() : '尚未备份';
 }
 
 // Force sync: immediately publish local data and request data from others
@@ -2780,7 +2920,14 @@ function switchPage(pageName) {
   document.getElementById('page-' + pageName).classList.add('active');
   event.currentTarget.classList.add('active');
   if (pageName === 'stats') renderStats();
-  if (pageName === 'list') renderOrderList();
+  if (pageName === 'list') {
+    // 进入订单列表时清空搜索框，避免"退出重进/切回"后仍停留在上次搜索结果页
+    const si = document.getElementById('searchInput');
+    if (si) si.value = '';
+    const cb = document.getElementById('searchClearBtn');
+    if (cb) cb.style.display = 'none';
+    renderOrderList();
+  }
   if (pageName === 'cost') renderCostTable();
 }
 
@@ -4183,6 +4330,7 @@ function syncCostTable(remoteCost, remoteClearedAt) {
 function saveCostTable() {
   // 与订单一致：按当前房间码隔离存储
   saveRoomJSON(COST_STORAGE_KEY, costTable);
+  scheduleCloudBackup(); // 成本变更后防抖备份到云端
 }
 
 // 清空时间戳同样按房间隔离存储
@@ -4721,6 +4869,14 @@ loadCostTable();
 loadUserBrands();
 // 初始化录入格式切换按钮（恢复上次选择的格式一/二）
 setInputFormat(inputFormatMode);
+// 进入页面时强制清空搜索框：避免浏览器/WebView 自动回填上次搜索词，
+// 导致"退出重进"后仍停留在搜索结果页（BUG 修复）
+(function () {
+  const si = document.getElementById('searchInput');
+  if (si) si.value = '';
+  const cb = document.getElementById('searchClearBtn');
+  if (cb) cb.style.display = 'none';
+})();
 renderOrderList();
 updateSortBarUI();
 updateStatsBar();

@@ -4092,6 +4092,12 @@ function getOrderAmount(order) {
 }
 
 
+// 作废/拒收订单不纳入金额统计（其金额虽已归零，这里再显式排除，避免任何路径下干扰统计）
+function isAmountExcluded(order) {
+  const s = order.status || '-';
+  return s === '作废' || s === '拒收';
+}
+
 function getOrderDate(dateStr) {
   if (!dateStr || dateStr === '-') return null;
   let m = String(dateStr).match(/(\d{1,2})[\/\-](\d{1,2})/);
@@ -4147,8 +4153,8 @@ function renderStats() {
   const now = new Date();
   const todayOrders = orders.filter(o => isToday(o.date));
   const monthOrders = orders.filter(o => isThisMonth(o.date));
-  const todayAmount = todayOrders.reduce((sum, o) => sum + getOrderAmount(o), 0);
-  const monthAmount = monthOrders.reduce((sum, o) => sum + getOrderAmount(o), 0);
+  const todayAmount = todayOrders.reduce((sum, o) => sum + (isAmountExcluded(o) ? 0 : getOrderAmount(o)), 0);
+  const monthAmount = monthOrders.reduce((sum, o) => sum + (isAmountExcluded(o) ? 0 : getOrderAmount(o)), 0);
 
   document.getElementById('todayLabel').textContent = `今日 (${now.getMonth()+1}/${now.getDate()})`;
   document.getElementById('monthLabel').textContent = `${now.getFullYear()}年${now.getMonth()+1}月`;
@@ -4167,7 +4173,7 @@ function renderStats() {
     let s = o.status || '未发货';
     if (!statusCounts[s]) statusCounts[s] = { count: 0, amount: 0 };
     statusCounts[s].count++;
-    statusCounts[s].amount += getOrderAmount(o);
+    statusCounts[s].amount += isAmountExcluded(o) ? 0 : getOrderAmount(o);
   });
 
   let breakdownHtml = '';
@@ -4175,10 +4181,11 @@ function renderStats() {
   for (let s of STATUS_OPTIONS) {
     if (statusCounts[s] && statusCounts[s].count > 0) {
       anyStatus = true;
+      const amtText = (s === '作废' || s === '拒收') ? '—' : formatAmount(statusCounts[s].amount);
       breakdownHtml += `<div class="status-tag tag-${s}">
         <span>${s}</span>
         <span class="count">${statusCounts[s].count}</span>
-        <span class="amt">${formatAmount(statusCounts[s].amount)}</span>
+        <span class="amt">${amtText}</span>
       </div>`;
     }
   }
@@ -4196,7 +4203,7 @@ function renderStats() {
   }
 
   // Total —— 同样跟随自定义时间段
-  const totalAmount = scopeOrders.reduce((sum, o) => sum + getOrderAmount(o), 0);
+  const totalAmount = scopeOrders.reduce((sum, o) => sum + (isAmountExcluded(o) ? 0 : getOrderAmount(o)), 0);
   document.getElementById('totalAmount').textContent = formatAmount(totalAmount);
   const totalLabel = document.querySelector('.total-amount-box .label');
   if (totalLabel) {
@@ -4219,7 +4226,7 @@ function queryCustomRange() {
   if (!startStr || !endStr) { showToast('请选择日期范围', 'error'); return; }
 
   const matched = orders.filter(o => orderDateInRange(o.date, startStr, endStr));
-  const amount = matched.reduce((sum, o) => sum + getOrderAmount(o), 0);
+  const amount = matched.reduce((sum, o) => sum + (isAmountExcluded(o) ? 0 : getOrderAmount(o)), 0);
   document.getElementById('customResult').innerHTML = `
     <div><span class="num">${matched.length}</span> 条订单</div>
     <div class="amt">${formatAmount(amount)}</div>

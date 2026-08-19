@@ -3250,11 +3250,12 @@ function renderPreview(order, mode) {
     } else if (col.key === 'costUnitPrice') {
       const eff = getOrderCostUnitPrice(order);
       const showVal = (val && val !== '-') ? val : (eff == null ? '' : eff);
-      html += `<input type="text" value="${showVal}" placeholder="留空=按型号自动取成本" onchange="updatePreview('costUnitPrice', this.value)"><div class="preview-hint">留空则按型号自动取成本，可手动覆盖</div>`;
+      html += `<input type="text" id="previewCostInput" value="${showVal}" placeholder="留空=按型号自动取成本" onchange="updatePreview('costUnitPrice', this.value)"><div class="preview-hint">留空则按型号自动取成本，可手动覆盖</div>`;
     } else if (col.key === 'cod') {
       html += `<input id="previewCodInput" type="text" value="${val === '-' ? '' : val}" placeholder="拒收自动归零，可手动改" onchange="updatePreview('cod', this.value)">`;
     } else {
-      html += `<input type="text" value="${val === '-' ? '' : val}" placeholder="-" onchange="updatePreview('${col.key}', this.value)">`;
+      const live = (col.key === 'model') ? ' oninput="updatePreview(\'model\', this.value)"' : '';
+      html += `<input type="text" value="${val === '-' ? '' : val}" placeholder="-"${live} onchange="updatePreview('${col.key}', this.value)">`;
     }
     html += `</div></div>`;
   });
@@ -3274,6 +3275,21 @@ function updatePreview(key, value) {
   } else {
     currentPreview[key] = value || '-';
   }
+  // 修改型号等影响派生字段的输入后，刷新预览里"自动识别"的派生字段（如成本单价）
+  if (key === 'model') refreshDerivedPreviewFields();
+}
+
+// 修改型号后，自动按新型号重新派生成本单价（自动识别的内容同步刷新）
+// 仅当未手动覆盖单价时才更新输入框，避免覆盖用户手动填写值
+function refreshDerivedPreviewFields() {
+  if (!currentPreview) return;
+  const ci = document.getElementById('previewCostInput');
+  if (!ci) return;
+  const manual = currentPreview.costUnitPrice;
+  const hasManual = manual != null && manual !== '' && manual !== '-';
+  if (hasManual) return;
+  const eff = getOrderCostUnitPrice(currentPreview);
+  ci.value = (eff == null ? '' : eff);
 }
 
 function onPreviewTrackingInput() {

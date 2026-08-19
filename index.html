@@ -1773,8 +1773,8 @@ function loadData() {
         if (!o.model && (o.brand || o.spec)) {
           o.model = [o.brand, o.spec].filter(v => v && v !== '-').join(' ').trim();
         }
-        // 历史已作废订单兜底归零（保证「所有」作废订单金额为零）
-        if (o.status === '作废') zeroVoidAmounts(o);
+        // 历史已作废/拒收订单兜底归零（保证「所有」终态订单金额为零）
+        if (o.status === '作废' || o.status === '拒收') zeroVoidAmounts(o);
       });
     } catch(e) { orders = []; }
   } else {
@@ -3604,13 +3604,16 @@ function setOrderStatus(order, status) {
   if (!order) return;
   const prev = order.status || '-';
   order.status = status || '-';
-  if (order.status === '拒收') {
-    order.cod = 0;
-  }
-  // 作废：归零所有金额；由作废恢复为其它状态时还原金额（避免误作废丢数据）
-  if (order.status === '作废' && prev !== '作废') {
+  const isTerminal = (s) => (s === '拒收' || s === '作废');
+  if (isTerminal(order.status) && !isTerminal(prev)) {
+    // 由非终态进入 拒收/作废：备份并归零所有金额
     zeroVoidAmounts(order);
-  } else if (order.status !== '作废' && prev === '作废') {
+  } else if (isTerminal(order.status) && isTerminal(prev) && order.status !== prev) {
+    // 终态互转（拒收<->作废）：先还原旧的备份，再为当前终态重新备份归零
+    restoreVoidAmounts(order);
+    zeroVoidAmounts(order);
+  } else if (!isTerminal(order.status) && isTerminal(prev)) {
+    // 由终态恢复为其它状态：还原金额（避免误作废/误拒收丢数据）
     restoreVoidAmounts(order);
   }
 }
